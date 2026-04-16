@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "masters-diploma"
+version = "0.1.0"
+description = "NLP pipeline for academic paper processing and graph export."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "arxiv",
+  "lxml",
+  "spacy",
+  "spacy-transformers",
+  "neo4j",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
