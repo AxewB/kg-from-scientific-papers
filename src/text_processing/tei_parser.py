@@ -85,14 +85,14 @@ class TEIParser:
         return "\n\n".join(paragraphs)
 
     def parse(self) -> ParsedPaper:
-        return {
-            "title": self.get_title(),
-            "authors": self.get_authors(),
-            "abstract": self.get_abstract(),
-            "keywords": self.get_keywords(),
-            "sections": self.get_sections(),
-            "full_text": self.get_full_text(),
-        }
+        return ParsedPaper(
+            title=self.get_title() or None,
+            authors=self.get_authors() or None,
+            abstract=self.get_abstract() or None,
+            keywords=self.get_keywords() or None,
+            sections=self.get_sections() or None,
+            full_text=self.get_full_text() or None,
+        )
 
     # --- private methods
 

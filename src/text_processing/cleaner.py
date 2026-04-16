@@ -26,7 +26,7 @@ class TextCleaner:
 
     def _remove_broken_table_lines(self, text: str) -> str:
         lines = text.split("\n")
-        clean_lines = []
+        clean_lines: list[str] = []
 
         for line in lines:
             tokens = line.split()
@@ -93,7 +93,7 @@ class TextCleaner:
     def _remove_numeric_dense_lines(self, text: str) -> str:
         """remove fragments that likely originate from flattened tables"""
         lines = text.split(". ")
-        cleaned = []
+        cleaned: list[str] = []
 
         for line in lines:
             digits = len(re.findall(r"\d", line))

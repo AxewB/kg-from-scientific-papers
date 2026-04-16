@@ -1,20 +1,19 @@
 from dataclasses import dataclass
-from typing import List
 
 from domain.sentence import Sentence
 from domain.sentence_entities import SentenceEntities
+from ner.ner_extractor import NERExtractor
+from relation_extraction.re import RelationExtractor
 from text_processing.cleaner import TextCleaner
 from text_processing.sentence_splitter import SentenceSplitter
-from relation_extraction.re import RelationExtractor
-from ner.ner_extractor import NERExtractor
 
 
 @dataclass(slots=True)
 class NLPResult:
     clean_text: str
-    sentences: List[str]
-    entities: List[SentenceEntities]
-    relations: List[Sentence]
+    sentences: list[str]
+    entities: list[SentenceEntities]
+    relations: list[Sentence]
 
 
 class NLPPipeline:
@@ -25,10 +24,10 @@ class NLPPipeline:
         cleaner: TextCleaner | None = None,
         splitter: SentenceSplitter | None = None,
     ):
-        self.ner = ner
-        self.re = re
-        self.cleaner = cleaner or TextCleaner()
-        self.splitter = splitter or SentenceSplitter()
+        self.ner: NERExtractor = ner
+        self.re: RelationExtractor = re
+        self.cleaner: TextCleaner = cleaner or TextCleaner()
+        self.splitter: SentenceSplitter = splitter or SentenceSplitter()
 
     def process(self, text: str) -> NLPResult:
         """

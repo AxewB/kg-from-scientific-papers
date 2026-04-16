@@ -1,7 +1,9 @@
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 from data_extraction.grobid import GrobidClient
+from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
 from extractors.extractor_base import ExtractorBase
 from helpers.paper_state import PaperState
@@ -18,42 +20,68 @@ class Workflow:
         pipeline: NLPPipeline,
         sink: Neo4jSink,
     ):
-        self.downloader = downloader
-        self.extractor = extractor
-        self.grobid = grobid
-        self.pipeline = pipeline
-        self.sink = sink
+        self.downloader: DownloaderBase = downloader
+        self.extractor: ExtractorBase = extractor
+        self.grobid: GrobidClient = grobid
+        self.pipeline: NLPPipeline = pipeline
+        self.sink: Neo4jSink = sink
 
     def run(self):
-        papers = self.downloader.download()
+        papers: list[Paper] = self.downloader.download()
 
         if not self.grobid.is_alive():
             raise RuntimeError("Grobid is offline")
 
-        for pdf_path in papers:
-            state = PaperState(pdf_path.parent)
+        for paper in papers:
+            try:
+                state = PaperState(paper.path.parent)  # getting pdf directory
 
-            # 1. GROBID
-            if not state.tei().exists():
-                tei_xml = self.grobid.process_fulltext(pdf_path)
-                state.tei().write_text(tei_xml or "", encoding="utf-8")
+                # 1. GROBID
+                if not state.is_valid_tei():
+                    tei_xml = self.grobid.process_fulltext(paper.path)
 
-            # 2. NLP
-            parsed = self.extractor.extract(state.tei().read_text())
-            text = parsed["full_text"]
+                    if not tei_xml or not tei_xml.strip():
+                        continue
 
-            if not state.nlp().exists():
+                    state.tei.write_text(tei_xml, encoding="utf-8")
+
+                # 2. NLP
+                parsed = self.extractor.extract(state.tei.read_text())
+                text = parsed["full_text"]
+
                 if not text:
                     continue
 
-                result = self.pipeline.process(text)
+                if not state.nlp.exists():
+                    result = self.pipeline.process(text)
+                    _ = state.nlp.write_text(
+                        json.dumps(asdict(result), ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                else:
+                    result = self.pipeline.process(text)
 
-                state.nlp().write_text(
-                    json.dumps(asdict(result), ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-            else:
-                result = self.pipeline.process(text)
+                # 3. Neo4j
+                self.sink.write(paper, result)
 
-            # 3. Neo4j
-            self.sink.write(state.dir.name, result)
+            except Exception as e:
+                print(f"[skip paper {paper.id}] {e}")
+                continue
+
+
+def is_valid_tei(path: Path) -> bool:
+    if not path.exists():
+        return False
+
+    try:
+        content = path.read_text(encoding="utf-8")
+
+        if not content.strip():
+            return False
+
+        if not content.lstrip().startswith("<?xml"):
+            return False
+
+        return True
+    except Exception:
+        return False

@@ -26,10 +26,10 @@ def main():
     downloader = ArxivDownloader(
         categories=[
             "cs.AI",
-            # "cs.AR",
-            # "cs.CC",
+            "cs.AR",
+            "cs.CC",
         ],
-        num_each=1,
+        num_each=3,
     )
 
     nlp_model = "en_core_web_trf"
@@ -44,7 +44,7 @@ def main():
     print("Configuring NLP pipeline...")
     pipeline = NLPPipeline(ner, re)
 
-    print("Connecting to Neo4j...")
+    print("Setting up Neo4j configuration...")
     db = Neo4jGraphWriter(
         uri="neo4j://localhost:7687",
         user="neo4j",

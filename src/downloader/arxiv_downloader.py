@@ -1,201 +1,27 @@
-# docs:
+# arxiv lib docs:
 # https://lukasschwab.me/arxiv.py/arxiv.html
-
+import time
 from pathlib import Path
 from time import sleep
+from typing import override
+from urllib.error import ContentTooShortError
 
-from arxiv import Client, Search, SortCriterion
+from arxiv import Client, Result, Search, SortCriterion
 
+from domain import category
+from domain.category import Category
+from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
 from helpers.paths import paths
-
-CATEGORIES = [
-    # Computer Science
-    "cs.AI",
-    "cs.AR",
-    "cs.CC",
-    "cs.CE",
-    "cs.CG",
-    "cs.CL",
-    "cs.CR",
-    "cs.CV",
-    "cs.CY",
-    "cs.DB",
-    "cs.DC",
-    "cs.DL",
-    "cs.DM",
-    "cs.DS",
-    "cs.ET",
-    "cs.FL",
-    "cs.GL",
-    "cs.GR",
-    "cs.GT",
-    "cs.HC",
-    "cs.IR",
-    "cs.IT",
-    "cs.LG",
-    "cs.LO",
-    "cs.MA",
-    "cs.MM",
-    "cs.MS",
-    "cs.NA",
-    "cs.NE",
-    "cs.NI",
-    "cs.OH",
-    "cs.OS",
-    "cs.PF",
-    "cs.PL",
-    "cs.RO",
-    "cs.SC",
-    "cs.SD",
-    "cs.SE",
-    "cs.SI",
-    "cs.SY",
-    # Economics
-    "econ.EM",
-    "econ.GN",
-    "econ.TH",
-    "eess.AS",
-    "eess.IV",
-    "eess.SP",
-    "eess.SY",
-    # Mathematics
-    "math.AC",
-    "math.AG",
-    "math.AP",
-    "math.AT",
-    "math.CA",
-    "math.CO",
-    "math.CT",
-    "math.CV",
-    "math.DG",
-    "math.DS",
-    "math.FA",
-    "math.GM",
-    "math.GN",
-    "math.GR",
-    "math.GT",
-    "math.HO",
-    "math.IT",
-    "math.KT",
-    "math.IT",
-    "math.LO",
-    "math.MG",
-    "math.MP",
-    "math.MP",
-    "math.NA",
-    "math.NT",
-    "math.OA",
-    "math.OC",
-    "math.PR",
-    "math.QA",
-    "math.RA",
-    "math.RT",
-    "math.SG",
-    "math.SP",
-    "math.ST",
-    # Physics
-    ## Astrophysics
-    "astro-ph.CO",
-    "astro-ph.EP",
-    "astro-ph.GA",
-    "astro-ph.HE",
-    "astro-ph.IM",
-    "astro-ph.SR",
-    ## Condensed Matter
-    "cond-mat.dis-nn",
-    "cond-mat.mes-hall",
-    "cond-mat.mtrl-sci",
-    "cond-mat.other",
-    "cond-mat.quant-gas",
-    "cond-mat.soft",
-    "cond-mat.stat-mech",
-    "cond-mat.str-el",
-    "cond-mat.supr-con",
-    ## General Relativity and Quantum Cosmology
-    "gr-qc",
-    ## High Energy Physics - Experiment
-    "hep-ex",
-    ## High Energy Physics - Lattice
-    "hep-lat",
-    ## High Energy Physics - Phenomenology
-    "hep-ph",
-    ## High Energy Physics - Theory
-    "hep-th",
-    ## Mathematical Physics
-    "math-ph",
-    "nlin.AO",
-    "nlin.CD",
-    "nlin.CG",
-    "nlin.PS",
-    "nlin.SI",
-    ## Nuclear Experiment
-    "nucl-ex",
-    ## Nuclear Theory
-    "nucl-th",
-    # Physics
-    "physics.acc-ph",
-    "physics.ao-ph",
-    "physics.app-ph",
-    "physics.atm-clus",
-    "physics.atom-ph",
-    "physics.bio-ph",
-    "physics.chem-ph",
-    "physics.class-ph",
-    "physics.comp-ph",
-    "physics.data-an",
-    "physics.ed-ph",
-    "physics.flu-dyn",
-    "physics.gen-ph",
-    "physics.geo-ph",
-    "physics.optics",
-    "physics.pop-ph",
-    "physics.plasm-ph",
-    "physics.med-ph",
-    "physics.hist-ph",
-    "physics.ins-det",
-    "physics.soc-ph",
-    "physics.space-ph",
-    "quant-ph",
-    # Quantitative Biology
-    "q-bio.BM",
-    "q-bio.CB",
-    "q-bio.GN",
-    "q-bio.MN",
-    "q-bio.NC",
-    "q-bio.OT",
-    "q-bio.PE",
-    "q-bio.QM",
-    "q-bio.SC",
-    "q-bio.TO",
-    # Quantitative Finance
-    "q-fin.CP",
-    "q-fin.EC",
-    "q-fin.GN",
-    "q-fin.EC",
-    "q-fin.MF",
-    "q-fin.PM",
-    "q-fin.PR",
-    "q-fin.RM",
-    "q-fin.ST",
-    "q-fin.TR",
-    # Statistics
-    "stat.AP",
-    "stat.CO",
-    "stat.ME",
-    "stat.ML",
-    "stat.OT",
-    "stat.TH",
-    "stat.TH",
-]
 
 
 class ArxivDownloader(DownloaderBase):
     def __init__(
         self,
-        categories: list[str] = CATEGORIES,
+        categories: list[str],
         num_each: int = 3,
         download_dir: Path = paths.papers,
+        category_registry: dict[str, Category] | None = None,
     ) -> None:
         """
         categories - categories dictionary (https://arxiv.org/category_taxonomy)
@@ -204,18 +30,31 @@ class ArxivDownloader(DownloaderBase):
         """
         super().__init__(root_dir=download_dir)
 
-        self.categories = categories
-        self.num_each = num_each
+        if category_registry is None:
+            self.category_registry = category.CATEGORY_REGISTRY
+        else:
+            self.category_registry: dict[str, Category] = category_registry
 
-    def download(self):
+        self.categories: list[str] = categories
+        self.num_each: int = num_each
+
+    @override
+    def download(self) -> list[Paper]:
         client = Client()
-        papers = []
+        papers: list[Paper] = []
 
-        for category in self.categories:
-            print(f'Category "{category}"')
+        for category_code in self.categories:
+            category = self.category_registry[category_code]
+            if not category:
+                print(
+                    f"Category with code {category} doesn't exist in category registry"
+                )
+                continue
+
+            print(f'Category "{category.code}" ({category.name})')
 
             search = Search(
-                query=category,
+                query=category.code,
                 max_results=self.num_each,
                 sort_by=SortCriterion.SubmittedDate,
             )
@@ -229,22 +68,65 @@ class ArxivDownloader(DownloaderBase):
                 paper_name = f"{paper_id}.pdf"
                 pdf_path = paper_dir / paper_name
 
-                # download only if missing
                 if not pdf_path.exists():
-                    r.download_pdf(
-                        dirpath=str(paper_dir),
-                        filename=paper_name,
+                    success = self._download_pdf_with_retry(
+                        r,
+                        str(paper_dir),
+                        paper_name,
                     )
+
+                    if not success:
+                        print(f"SKIP {paper_id}: Can't download")
+                        continue
+
                     print(f"Downloaded: {pdf_path}")
                 else:
                     print(f"Exists: {paper_id}")
 
-                # IMPORTANT: always return path
-                papers.append(pdf_path)
+                paper_categories: list[Category] = [
+                    self.category_registry[c]
+                    for c in r.categories
+                    if c in self.category_registry
+                ]
+
+                paper = Paper(
+                    id=paper_id,
+                    path=pdf_path,
+                    categories=paper_categories,
+                )
+
+                papers.append(paper)
 
             sleep(3)
 
         return papers
+
+    def _download_pdf_with_retry(
+        self,
+        r: Result,
+        paper_dir: str,
+        paper_name: str,
+        retries: int = 3,
+    ) -> bool:
+        """Returns true if download successful, else False"""
+        for attempt in range(retries):
+            try:
+                _ = r.download_pdf(
+                    dirpath=paper_dir,
+                    filename=paper_name,
+                )
+                return True
+            except ContentTooShortError:
+                if attempt < retries - 1:
+                    print(f"[retry {attempt + 1}/{retries}] {paper_name}")
+                    time.sleep(2)
+                else:
+                    return False
+            except Exception as e:
+                print(f"[error] {paper_name}: {e}")
+                return False
+
+        return False
 
     def _safe_name(self, name: str) -> str:
         return "".join(c for c in name if c.isalnum() or c in "._- ").strip()

@@ -3,13 +3,19 @@ from pathlib import Path
 
 class PaperState:
     def __init__(self, paper_dir: Path):
-        self.dir = paper_dir
+        self.dir: Path = paper_dir
+        self.dir.mkdir(parents=True, exist_ok=True)
 
-    def pdf(self) -> Path:
-        return self.dir / f"{self.dir.name}.pdf"
+        self.pdf: Path = self.dir / f"{self.dir.name}.pdf"
+        self.tei: Path = self.dir / "tei.xml"
+        self.nlp: Path = self.dir / "nlp.json"
 
-    def tei(self) -> Path:
-        return self.dir / "tei.xml"
+    def is_valid_tei(self) -> bool:
+        if not self.tei.exists():
+            return False
 
-    def nlp(self) -> Path:
-        return self.dir / "nlp.json"
+        try:
+            content = self.tei.read_text(encoding="utf-8")
+            return bool(content.strip() and content.lstrip().startswith("<?xml"))
+        except Exception:
+            return False

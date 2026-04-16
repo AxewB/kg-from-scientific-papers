@@ -1,9 +1,10 @@
+from typing import Any
 from relation_extraction.re import Relation
 
 
 def build_triples_from_relations(
     relations_by_sentence: list[list[Relation]],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     Преобразует список извлечённых отношений в тройки (subject, predicate, object).
     Отбрасывает отношения без глагола.

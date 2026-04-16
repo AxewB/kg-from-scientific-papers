@@ -6,7 +6,7 @@ from domain.parsed_paper import ParsedPaper
 
 class ExtractorBase(ABC):
     def __init__(self, root_dir: Path) -> None:
-        self.root_dir = root_dir
+        self.root_dir: Path = root_dir
 
     @abstractmethod
     def extract(self, xml: str) -> ParsedPaper:

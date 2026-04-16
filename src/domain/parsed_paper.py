@@ -1,10 +1,11 @@
-from typing import Dict, List, TypedDict
+from typing import TypedDict
 
 
+# WARN: maybe fields should be `Optional` type
 class ParsedPaper(TypedDict):
-    title: str
-    authors: List[str]
-    abstract: str
-    keywords: List[str]
-    sections: List[Dict[str, str]]
-    full_text: str
+    title: str | None
+    authors: list[str] | None
+    abstract: str | None
+    keywords: list[str] | None
+    sections: list[dict[str, str | None]] | None
+    full_text: str | None
