@@ -111,5 +111,5 @@ class RelationExtractor:
     def extract_batch(self, texts: list[str]) -> list[Sentence]:
         return [
             self._process_doc(doc)
-            for doc in self.nlp.pipe(texts, batch_size=64, n_process=2)
+            for doc in self.nlp.pipe(texts, batch_size=64, n_process=1)
         ]

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 
-# WARN: maybe fields should be `Optional` type
 @dataclass
 class ParsedPaper(TypedDict):
     title: str | None

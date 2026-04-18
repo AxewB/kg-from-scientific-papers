@@ -80,7 +80,7 @@ class Workflow:
         result = self.pipeline.process(text)
 
         _ = state.nlp.write_text(
-            json.dumps(asdict(result), ensure_ascii=False, indent=2),
+            json.dumps(result.model_dump(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 

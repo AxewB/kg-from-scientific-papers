@@ -1,27 +1,25 @@
-from logging import Logger
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
-import helpers.logger as lg
+lg = logging.getLogger(__name__)
 
 
 class GrobidClient:
     def __init__(self, base_url: str = "http://localhost:8070") -> None:
         self.base_url: str = base_url
-        self.logger: Logger = logging.getLogger(__name__)
 
     def is_alive(self) -> bool:
         try:
             r = requests.get(self.base_url, timeout=5)
             return r.status_code == 200
         except requests.RequestException as e:
-            self.logger.warning("GROBID not reachable: %s", e)
+            lg.warning("GROBID not reachable: %s", e)
             return False
 
-    def process_header(self, pdf_path: Path) -> Optional[str]:
+    def process_header(self, pdf_path: Path) -> str | None:
         return self._post_pdf("/api/processHeaderDocument", pdf_path)
 
     def process_fulltext(self, pdf_path: Path) -> str | None:
@@ -46,11 +44,11 @@ class GrobidClient:
         self,
         endpoint: str,
         pdf_path: Path,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,  # pyright: ignore[reportExplicitAny]
         timeout: int = 30,
     ) -> str | None:
         if not pdf_path.exists():
-            self.logger.error("PDF not found: %s", pdf_path)
+            lg.error("PDF not found: %s", pdf_path)
             return None
 
         url = f"{self.base_url}{endpoint}"
@@ -61,11 +59,11 @@ class GrobidClient:
                 r = requests.post(url, files=files, params=params, timeout=timeout)
 
             if r.status_code != 200:
-                self.logger.error("GROBID error %s on %s", r.status_code, endpoint)
+                lg.error("GROBID error %s on %s", r.status_code, endpoint)
                 return None
 
             return r.text
 
         except requests.RequestException as e:
-            self.logger.error("Request failed: %s", e)
+            lg.error("Request failed: %s", e)
             return None
