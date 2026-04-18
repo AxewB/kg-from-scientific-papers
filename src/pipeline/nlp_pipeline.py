@@ -32,8 +32,9 @@ class NLPPipeline:
         lg.info("2. NLP: Splitting...")
         sentences = self.splitter.split(clean_text)
 
-        lg.info("3. NLP: Extracting...")
+        lg.info("3.1. NLP: Extracting entities (NER)...")
         entities = self.ner.extract_batch(sentences)
+        lg.info("3.2. NLP: Extracting relations (RE)...")
         relations = self.relation_extractor.extract_batch(sentences)
 
         return NLPResult(

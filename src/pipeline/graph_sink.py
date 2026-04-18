@@ -36,8 +36,6 @@ class Neo4jSink:
                 )
             )
 
-        lg.warning(f"Relations type: {type(result.relations[0])}")
-
         # 2. NLP relations
         for sentence in result.relations:
             for rel in sentence.relations:
