@@ -12,7 +12,7 @@ def init_logger(log_file: Path) -> None:
         return
 
     formatter = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        fmt="%(asctime)s.%(msecs)03d | %(levelname)s | %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     )
 
