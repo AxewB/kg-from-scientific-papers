@@ -1,9 +1,8 @@
-from dataclasses import dataclass
-
 from db.neo4j_writer import Neo4jGraphWriter
 from domain.kg_triple import KGTriple
 from domain.paper import Paper
 from pipeline.nlp_pipeline import NLPResult
+
 
 class Neo4jSink:
     def __init__(self, db_writer: Neo4jGraphWriter):

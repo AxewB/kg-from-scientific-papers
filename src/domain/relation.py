@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass(slots=True)
-class Relation:
+class RelationTriple:
     subject: str
     subject_label: str
     target: str

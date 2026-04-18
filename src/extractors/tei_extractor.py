@@ -12,7 +12,8 @@ class TEIExtractor(ExtractorBase):
 
     @override
     def extract(self, xml: str) -> ParsedPaper:
-        parser = TEIParser(xml)
-        parsed = parser.parse()
+        parser = TEIParser.from_xml(xml)
 
-        return parsed
+        parsed: ParsedPaper = parser.parse()
+
+        return parser.parse()

@@ -1,16 +1,19 @@
 from collections.abc import Iterable
 
 from spacy.language import Language
+from spacy.tokens import Token
+from spacy.tokens.doc import Doc
+from spacy.tokens.span import Span
 
 from domain.entity import Entity
 from domain.entity_pair import EntityPair
-from domain.relation import Relation
+from domain.relation import RelationTriple
 from domain.sentence import Sentence
 
 
 class RelationExtractor:
     def __init__(self, nlp: Language):
-        self.nlp = nlp
+        self.nlp: Language = nlp
 
     # Utils
 
@@ -18,7 +21,7 @@ class RelationExtractor:
         clean = text.replace(".", "").strip()
         return bool(clean) and not clean.isdigit()
 
-    def _to_entity(self, ent) -> Entity:
+    def _to_entity(self, ent: Span) -> Entity:
         return Entity(
             text=ent.text,
             label=ent.label_,
@@ -28,14 +31,14 @@ class RelationExtractor:
 
     # Core pipeline steps
 
-    def _extract_entity_pairs(self, doc) -> Iterable[EntityPair]:
+    def _extract_entity_pairs(self, doc: Doc) -> Iterable[EntityPair]:
         entities = [self._to_entity(e) for e in doc.ents]
 
         for i, left in enumerate(entities):
             for right in entities[i + 1 :]:
                 yield EntityPair(left, right)
 
-    def _extract_verbs_between(self, doc, pair: EntityPair):
+    def _extract_verbs_between(self, doc: Doc, pair: EntityPair):
         return [
             tok for tok in doc[pair.left.end : pair.right.start] if tok.pos_ == "VERB"
         ]
@@ -43,16 +46,16 @@ class RelationExtractor:
     def _build_relation(
         self,
         pair: EntityPair,
-        verbs,
+        verbs: list[Token],
         sentence: str,
-    ) -> Relation | None:
+    ) -> RelationTriple | None:
         if not (
             self._is_valid_entity(pair.left.text)
             and self._is_valid_entity(pair.right.text)
         ):
             return None
 
-        return Relation(
+        return RelationTriple(
             subject=pair.left.text,
             subject_label=pair.left.label,
             target=pair.right.text,
@@ -64,8 +67,8 @@ class RelationExtractor:
     # Public API
 
     def extract(self, text: str) -> Sentence:
-        doc = self.nlp(text)
-        relations: list[Relation] = []
+        doc: Doc = self.nlp(text)
+        relations: list[RelationTriple] = []
 
         for pair in self._extract_entity_pairs(doc):
             verbs = self._extract_verbs_between(doc, pair)
@@ -79,7 +82,7 @@ class RelationExtractor:
         results: list[Sentence] = []
 
         for doc in self.nlp.pipe(texts, batch_size=32):
-            relations: list[Relation] = []
+            relations: list[RelationTriple] = []
 
             for pair in self._extract_entity_pairs(doc):
                 verbs = self._extract_verbs_between(doc, pair)

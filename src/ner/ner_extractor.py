@@ -1,7 +1,5 @@
-from typing import List
-
-import spacy
 from spacy.language import Language
+from spacy.tokens.span import Span
 
 from domain.entity import Entity
 from domain.sentence_entities import SentenceEntities
@@ -9,11 +7,11 @@ from domain.sentence_entities import SentenceEntities
 
 class NERExtractor:
     def __init__(self, nlp: Language):
-        self.nlp = nlp
+        self.nlp: Language = nlp
 
-    # Internal
+    # private
 
-    def _convert(self, ent) -> Entity:
+    def _convert(self, ent: Span) -> Entity:
         return Entity(
             text=ent.text,
             label=ent.label_,
@@ -21,7 +19,7 @@ class NERExtractor:
             end=ent.end_char,
         )
 
-    # Public API
+    # public
 
     def extract(self, text: str) -> SentenceEntities:
         doc = self.nlp(text)
@@ -33,8 +31,8 @@ class NERExtractor:
             entities=entities,
         )
 
-    def extract_batch(self, texts: List[str]) -> List[SentenceEntities]:
-        results: List[SentenceEntities] = []
+    def extract_batch(self, texts: list[str]) -> list[SentenceEntities]:
+        results: list[SentenceEntities] = []
 
         for doc in self.nlp.pipe(texts, batch_size=32):
             entities = [self._convert(ent) for ent in doc.ents]

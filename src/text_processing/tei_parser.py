@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional
 
 from domain.parsed_paper import ParsedPaper
 
@@ -8,23 +7,45 @@ NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 
 # Text Encoding Initiative Parser (XML standart)
 class TEIParser:
-    def __init__(self, xml: str):
-        self.root = ET.fromstring(xml)
-        self._remove_unwanted_tags()
-        self._strip_refs()
+    """
+    Parser for TEI standard of XML documents (e.g. GROBID returns such xml)
+    """
 
-    def get_title(self) -> Optional[str]:
+    def __init__(self, root: ET.Element, *, _from_factory: bool = False):
+        """
+        Init method is not meant to be used outside TEIParser class.
+
+        Use TEIParser.from_xml() instead of direct constructor
+        """
+        if not _from_factory:
+            raise RuntimeError("Use TEIParser.from_xml() instead of direct constructor")
+
+        self.root: ET.Element = root
+
+    @classmethod
+    def from_xml(cls, xml: str) -> "TEIParser":
+        root = ET.fromstring(xml)
+
+        parser = cls(root, _from_factory=True)
+
+        # preprocessing
+        parser._remove_unwanted_tags()
+        parser._strip_refs()
+
+        return parser
+
+    def get_title(self) -> str | None:
         el = self.root.find(".//tei:titleStmt/tei:title", NS)
         return el.text.strip() if el is not None and el.text else None
 
-    def get_authors(self) -> List[str]:
-        authors = []
+    def get_authors(self) -> list[str]:
+        authors: list[str] = []
 
         for author in self.root.findall(".//tei:analytic/tei:author", NS):
             first = author.find(".//tei:forename", NS)
             last = author.find(".//tei:surname", NS)
 
-            name_parts = []
+            name_parts: list[str] = []
 
             if first is not None and first.text:
                 name_parts.append(first.text.strip())
@@ -37,7 +58,7 @@ class TEIParser:
 
         return authors
 
-    def get_abstract(self) -> Optional[str]:
+    def get_abstract(self) -> str | None:
         el = self.root.find(".//tei:profileDesc/tei:abstract", NS)
 
         if el is None:
@@ -46,8 +67,8 @@ class TEIParser:
         text = "".join(el.itertext()).strip()
         return text if text else None
 
-    def get_keywords(self) -> List[str]:
-        keywords = []
+    def get_keywords(self) -> list[str]:
+        keywords: list[str] = []
 
         for term in self.root.findall(".//tei:keywords/tei:term", NS):
             if term.text:
@@ -55,8 +76,8 @@ class TEIParser:
 
         return keywords
 
-    def get_sections(self) -> List[Dict[str, Optional[str]]]:
-        sections = []
+    def get_sections(self) -> list[dict[str, str | None]]:
+        sections: list[dict[str, str | None]] = []
 
         for div in self.root.findall(".//tei:body/tei:div", NS):
             head = div.find("tei:head", NS)
@@ -75,7 +96,7 @@ class TEIParser:
         return sections
 
     def get_full_text(self) -> str:
-        paragraphs = []
+        paragraphs: list[str] = []
 
         for p in self.root.findall(".//tei:body//tei:p", NS):
             text = "".join(p.itertext()).strip()
@@ -94,11 +115,11 @@ class TEIParser:
             full_text=self.get_full_text() or None,
         )
 
-    # --- private methods
+    # private
 
     def _strip_refs(self):
         for ref in self.root.findall(".//tei:ref", NS):
-            parent = self._get_parent(ref)
+            parent: ET.Element[str] | None = self._get_parent(ref)
             if parent is None:
                 continue
 
@@ -122,7 +143,7 @@ class TEIParser:
                 if parent is not None:
                     parent.remove(el)
 
-    def _get_parent(self, child):
+    def _get_parent(self, child: ET.Element):
         for parent in self.root.iter():
             for c in parent:
                 if c is child:

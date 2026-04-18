@@ -1,15 +1,14 @@
-from typing import Any
-from relation_extraction.re import Relation
+from domain.relation import RelationTriple
 
 
 def build_triples_from_relations(
-    relations_by_sentence: list[list[Relation]],
-) -> list[dict[str, Any]]:
+    relations_by_sentence: list[list[RelationTriple]],
+) -> list[RelationTriple]:
     """
     Преобразует список извлечённых отношений в тройки (subject, predicate, object).
     Отбрасывает отношения без глагола.
     """
-    triples = []
+    triples: list[RelationTriple] = []
 
     for sentence_relations in relations_by_sentence:
         for rel in sentence_relations:
