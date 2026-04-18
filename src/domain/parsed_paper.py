@@ -3,7 +3,7 @@ from typing import TypedDict
 
 
 # WARN: maybe fields should be `Optional` type
-@dataclass(slots=True)
+@dataclass
 class ParsedPaper(TypedDict):
     title: str | None
     authors: list[str] | None
