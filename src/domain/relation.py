@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from pydantic import BaseModel
 
 
 @dataclass(slots=True)
-class RelationTriple:
+class RelationTriple(BaseModel):
     subject: str
     subject_label: str
     target: str

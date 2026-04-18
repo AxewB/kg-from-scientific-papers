@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from typing import TypedDict
 
 
 # WARN: maybe fields should be `Optional` type
+@dataclass(slots=True)
 class ParsedPaper(TypedDict):
     title: str | None
     authors: list[str] | None

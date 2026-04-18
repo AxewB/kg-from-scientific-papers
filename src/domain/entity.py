@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from pydantic import BaseModel
 
 
 @dataclass(slots=True)
-class Entity:
+class Entity(BaseModel):
     text: str
     label: str
     start: int

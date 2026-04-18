@@ -4,7 +4,7 @@ from domain.sentence import Sentence
 from domain.sentence_entities import SentenceEntities
 
 
-@dataclass
+@dataclass(slots=True)
 class NLPDocument:
     sentences: list[str]
     entities: list[SentenceEntities]

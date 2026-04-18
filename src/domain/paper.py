@@ -4,7 +4,7 @@ from pathlib import Path
 from domain.category import Category
 
 
-@dataclass
+@dataclass(slots=True)
 class Paper:
     id: str
     path: Path

@@ -4,7 +4,7 @@ from typing import Literal
 NodeType = Literal["Paper", "Category", "Domain", "Entity"]
 
 
-@dataclass
+@dataclass(slots=True)
 class KGTriple:
     subject: str
     predicate: str
