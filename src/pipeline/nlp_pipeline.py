@@ -1,19 +1,8 @@
-from dataclasses import dataclass
-
-from domain.sentence import Sentence
-from domain.sentence_entities import SentenceEntities
+from domain.nlp_result import NLPResult
 from ner.ner_extractor import NERExtractor
 from relation_extraction.re import RelationExtractor
 from text_processing.cleaner import TextCleaner
 from text_processing.sentence_splitter import SentenceSplitter
-
-
-@dataclass(slots=True)
-class NLPResult:
-    clean_text: str
-    sentences: list[str]
-    entities: list[SentenceEntities]
-    relations: list[Sentence]
 
 
 class NLPPipeline:
@@ -35,7 +24,7 @@ class NLPPipeline:
 
         return: NLPResult - formatted and cleaned text
         """
-        # 1 - clean
+        # 1 - clear
         clean_text = self.cleaner.clear(text)
 
         # 2 - split
