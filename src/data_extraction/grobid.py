@@ -1,4 +1,5 @@
 from logging import Logger
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,7 +11,7 @@ import helpers.logger as lg
 class GrobidClient:
     def __init__(self, base_url: str = "http://localhost:8070") -> None:
         self.base_url: str = base_url
-        self.logger: Logger = lg.get_logger()
+        self.logger: Logger = logging.getLogger(__name__)
 
     def is_alive(self) -> bool:
         try:

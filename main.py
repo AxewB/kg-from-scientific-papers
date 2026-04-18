@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -20,47 +21,51 @@ from relation_extraction.re import RelationExtractor
 
 
 def main():
-    lg = logger.init_logger(paths.log_file())
+    # initiating global logger
+    logger.init_logger(paths.log_file())
 
-    print("Initializing downloader...")
+    # getting logger by app name
+    lg = logging.getLogger(__name__)
+
+    lg.info("Initializing downloader...")
     downloader = ArxivDownloader(
         categories=[
             "cs.AI",
-            "cs.AR",
-            "cs.CC",
+            # "cs.AR",
+            # "cs.CC",
         ],
-        num_each=3,
+        num_each=1,
     )
 
     nlp_model = "en_core_web_trf"
 
-    print(f"Initializing NLP model {nlp_model}...")
+    lg.info(f"Initializing NLP model {nlp_model}...")
     nlp = spacy.load(nlp_model)
 
-    print("Initializing NER and RE extractors...")
+    lg.info("Initializing NER and RE extractors...")
     ner = NERExtractor(nlp)
     re = RelationExtractor(nlp)
 
-    print("Configuring NLP pipeline...")
+    lg.info("Configuring NLP pipeline...")
     pipeline = NLPPipeline(ner, re)
 
-    print("Setting up Neo4j configuration...")
+    lg.info("Setting up Neo4j configuration...")
     db = Neo4jGraphWriter(
         uri="neo4j://localhost:7687",
         user="neo4j",
         password="",
     )
 
-    print("Creating sink for Neo4j...")
+    lg.info("Creating sink for Neo4j...")
     sink = Neo4jSink(db)
 
-    print("Creating text extractor...")
+    lg.info("Creating text extractor...")
     extractor = TEIExtractor(root_dir=paths.papers)
 
-    print("Configuring GROBID...")
+    lg.info("Configuring GROBID...")
     grobid = GrobidClient()
 
-    print("Setting up workflow...")
+    lg.info("Setting up workflow...")
     workflow = Workflow(
         downloader=downloader,
         extractor=extractor,
@@ -69,10 +74,10 @@ def main():
         sink=sink,
     )
 
-    print("Running workflow...")
+    lg.info("Running workflow...")
     workflow.run()
 
-    print("Closing Neo4j connection...")
+    lg.info("Closing Neo4j connection...")
     db.close()
 
 

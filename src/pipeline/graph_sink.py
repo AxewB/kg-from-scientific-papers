@@ -1,8 +1,10 @@
+import logging
 from db.neo4j_writer import Neo4jGraphWriter
 from domain.kg_triple import KGTriple
 from domain.paper import Paper
 from pipeline.nlp_pipeline import NLPResult
 
+lg = logging.getLogger(__name__)
 
 class Neo4jSink:
     def __init__(self, db_writer: Neo4jGraphWriter):
@@ -11,7 +13,7 @@ class Neo4jSink:
     def write(self, paper: Paper, result: NLPResult) -> None:
         triples: list[KGTriple] = []
 
-        # 1. PAPER → CATEGORY → DOMAIN
+        # 1. paper -> category -> domain
         for category in paper.categories:
             triples.append(
                 KGTriple(
@@ -34,7 +36,9 @@ class Neo4jSink:
                 )
             )
 
-        # 2. NLP RELATIONS
+        lg.warning(f"Relations type: {type(result.relations[0])}")
+
+        # 2. NLP relations
         for sentence in result.relations:
             for rel in sentence.relations:
                 if not rel.relation:

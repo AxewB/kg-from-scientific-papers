@@ -1,5 +1,6 @@
 # arxiv lib docs:
 # https://lukasschwab.me/arxiv.py/arxiv.html
+import logging
 import time
 from pathlib import Path
 from time import sleep
@@ -14,6 +15,7 @@ from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
 from helpers.paths import paths
 
+lg = logging.getLogger(__name__)
 
 class ArxivDownloader(DownloaderBase):
     def __init__(
@@ -46,12 +48,12 @@ class ArxivDownloader(DownloaderBase):
         for category_code in self.categories:
             category = self.category_registry[category_code]
             if not category:
-                print(
+                lg.info(
                     f"Category with code {category} doesn't exist in category registry"
                 )
                 continue
 
-            print(f'Category "{category.code}" ({category.name})')
+            lg.info(f'Category "{category.code}" ({category.name})')
 
             search = Search(
                 query=category.code,
@@ -76,12 +78,12 @@ class ArxivDownloader(DownloaderBase):
                     )
 
                     if not success:
-                        print(f"SKIP {paper_id}: Can't download")
+                        lg.info(f"SKIP {paper_id}: Can't download")
                         continue
 
-                    print(f"Downloaded: {pdf_path}")
+                    lg.info(f"Downloaded: {pdf_path}")
                 else:
-                    print(f"Exists: {paper_id}")
+                    lg.info(f"Exists: {paper_id}")
 
                 paper_categories: list[Category] = [
                     self.category_registry[c]
@@ -118,12 +120,12 @@ class ArxivDownloader(DownloaderBase):
                 return True
             except ContentTooShortError:
                 if attempt < retries - 1:
-                    print(f"[retry {attempt + 1}/{retries}] {paper_name}")
+                    lg.info(f"[retry {attempt + 1}/{retries}] {paper_name}")
                     time.sleep(2)
                 else:
                     return False
             except Exception as e:
-                print(f"[error] {paper_name}: {e}")
+                lg.info(f"[error] {paper_name}: {e}")
                 return False
 
         return False
