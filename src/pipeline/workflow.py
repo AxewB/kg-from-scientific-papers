@@ -4,12 +4,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 from data_extraction.grobid import GrobidClient
+from domain.nlp_result import NLPResult
 from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
 from extractors.extractor_base import ExtractorBase
 from helpers.paper_state import PaperState
 from pipeline.graph_sink import Neo4jSink
-from pipeline.nlp_pipeline import NLPPipeline, NLPResult
+from pipeline.nlp_pipeline import NLPPipeline
 
 lg = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class Workflow:
     # --- steps
 
     def _step_grobid(self, state: PaperState, paper_path: Path) -> None:
-        lg.info(f"Doing GROBID step...")
+        lg.info("Doing GROBID step...")
         if state.is_valid_tei():
             return
 
@@ -62,7 +63,7 @@ class Workflow:
         _ = state.tei.write_text(tei_xml, encoding="utf-8")
 
     def _step_nlp(self, state: PaperState) -> NLPResult:
-        lg.info(f"Doing NLP step...")
+        lg.info("Doing NLP step...")
         tei_text = state.tei.read_text(encoding="utf-8")
 
         parsed = self.extractor.extract(tei_text)
@@ -75,6 +76,7 @@ class Workflow:
         if state.nlp.exists():
             return self._load_nlp(state)
 
+        lg.info("Starting NLP processing...")
         result = self.pipeline.process(text)
 
         _ = state.nlp.write_text(
@@ -85,7 +87,7 @@ class Workflow:
         return result
 
     def _step_neo4j(self, paper: Paper, result: NLPResult) -> None:
-        lg.info(f"Doing Neo4j step...")
+        lg.info("Doing Neo4j step...")
         self.sink.write(paper, result)
 
     # --- helpers
