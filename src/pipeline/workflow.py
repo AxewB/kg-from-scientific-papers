@@ -1,6 +1,5 @@
 import json
 import logging
-from dataclasses import asdict
 from pathlib import Path
 
 from data_extraction.grobid import GrobidClient
@@ -36,12 +35,20 @@ class Workflow:
         if not self.grobid.is_alive():
             raise RuntimeError("Grobid is offline")
 
-        for paper in papers:
+        total_papers = len(papers)
+
+        for i, paper in enumerate(papers):
+            lg.info(f"Processing paper {i + 1} out of {total_papers}")
             try:
                 state = PaperState(paper.path.parent)
 
+                # Step 1. GROBID
                 self._step_grobid(state, paper.path)
+
+                # Step 2. NLP (NER, RE)
                 result = self._step_nlp(state)
+
+                # Step 3. Push triples to Neo4j
                 self._step_neo4j(paper, result)
 
             except Exception as e:
