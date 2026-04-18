@@ -17,7 +17,7 @@ from ner.ner_extractor import NERExtractor
 from pipeline.graph_sink import Neo4jSink
 from pipeline.nlp_pipeline import NLPPipeline
 from pipeline.workflow import Workflow
-from relation_extraction.re import RelationExtractor
+from relation_extraction.relation_extractor import RelationExtractor
 
 
 def main():

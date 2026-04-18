@@ -1,20 +1,22 @@
+import logging
 from domain.nlp_result import NLPResult
 from ner.ner_extractor import NERExtractor
-from relation_extraction.re import RelationExtractor
+from relation_extraction.relation_extractor import RelationExtractor
 from text_processing.cleaner import TextCleaner
 from text_processing.sentence_splitter import SentenceSplitter
 
+lg = logging.getLogger(__name__)
 
 class NLPPipeline:
     def __init__(
         self,
         ner: NERExtractor,
-        re: RelationExtractor,
+        relation_extractor: RelationExtractor,
         cleaner: TextCleaner | None = None,
         splitter: SentenceSplitter | None = None,
     ):
         self.ner: NERExtractor = ner
-        self.re: RelationExtractor = re
+        self.relation_extractor: RelationExtractor = relation_extractor
         self.cleaner: TextCleaner = cleaner or TextCleaner()
         self.splitter: SentenceSplitter = splitter or SentenceSplitter()
 
@@ -24,15 +26,15 @@ class NLPPipeline:
 
         return: NLPResult - formatted and cleaned text
         """
-        # 1 - clear
+        lg.info("1. NLP: Clearing...")
         clean_text = self.cleaner.clear(text)
 
-        # 2 - split
+        lg.info("2. NLP: Splitting...")
         sentences = self.splitter.split(clean_text)
 
-        # 3 - extract
+        lg.info("3. NLP: Extracting...")
         entities = self.ner.extract_batch(sentences)
-        relations = self.re.extract_batch(sentences)
+        relations = self.relation_extractor.extract_batch(sentences)
 
         return NLPResult(
             clean_text=clean_text,
