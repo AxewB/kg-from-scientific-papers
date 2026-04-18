@@ -1,8 +1,10 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from data_extraction.grobid import GrobidClient
+from domain.ir import BlockIR, DocumentIR, DocumentMeta, SectionIR
 from domain.nlp_result import NLPResult
 from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
@@ -74,17 +76,14 @@ class Workflow:
         tei_text = state.tei.read_text(encoding="utf-8")
 
         parsed = self.extractor.extract(tei_text)
-        text = parsed.get("full_text")
-
-        if not text:
-            raise ValueError("Empty extracted text")
+        doc_ir = self._to_document_ir(parsed, doc_id=state.dir.name)
 
         # either we read or we count
         if state.nlp.exists():
             return self._load_nlp(state)
 
         lg.info("Starting NLP processing...")
-        result = self.pipeline.process(text)
+        result = self.pipeline.process(doc_ir)
 
         _ = state.nlp.write_text(
             json.dumps(result.model_dump(), ensure_ascii=False, indent=2),
@@ -102,3 +101,35 @@ class Workflow:
     def _load_nlp(self, state: PaperState) -> NLPResult:
         data = json.loads(state.nlp.read_text(encoding="utf-8"))  # pyright: ignore[reportAny]
         return NLPResult.model_validate(data)
+
+    def _to_document_ir(self, parsed: dict[str, Any], doc_id: str) -> DocumentIR:
+        sections_data = parsed.get("sections") or []
+        sections: list[SectionIR] = []
+
+        for idx, section in enumerate(sections_data):
+            text = section.get("text")
+            blocks: list[BlockIR] = []
+            if text:
+                blocks.append(BlockIR(type="text", text=text))
+
+            sections.append(
+                SectionIR(
+                    title=section.get("title"),
+                    level=idx + 1,
+                    blocks=blocks,
+                )
+            )
+
+        return DocumentIR(
+            doc_id=doc_id,
+            meta=DocumentMeta(
+                title=parsed.get("title"),
+                authors=parsed.get("authors") or [],
+                abstract=parsed.get("abstract"),
+                keywords=parsed.get("keywords") or [],
+            ),
+            sections=sections,
+            references=[],
+            formulas=[],
+            raw_text=parsed.get("full_text"),
+        )

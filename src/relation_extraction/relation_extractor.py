@@ -4,6 +4,7 @@ from spacy.language import Language
 from spacy.tokens import Doc, Span, Token
 
 from domain.entity import Entity
+from domain.ir import BlockIR
 from domain.relation import RelationTriple
 from domain.sentence import Sentence
 
@@ -12,7 +13,7 @@ class RelationExtractor:
     MAX_TOKEN_DISTANCE: int = 40
 
     def __init__(self, nlp: Language):
-        self.nlp: Language = nlp
+        self.nlp = nlp
 
     # validation
 
@@ -102,14 +103,17 @@ class RelationExtractor:
 
         return Sentence(text=doc.text, relations=relations)
 
-    # public API
+    def extract_str(self, texts: list[str]) -> list[Sentence]:
+        return [self._process_doc(doc) for doc in self.nlp.pipe(texts)]
 
-    def extract(self, text: str) -> Sentence:
-        doc = self.nlp(text)
-        return self._process_doc(doc)
+    def extract_blocks(self, blocks: list[BlockIR]) -> list[Sentence]:
+        results: list[Sentence] = []
 
-    def extract_batch(self, texts: list[str]) -> list[Sentence]:
-        return [
-            self._process_doc(doc)
-            for doc in self.nlp.pipe(texts, batch_size=64, n_process=1)
-        ]
+        for block in blocks:
+            if block.type != "text" or not block.text:
+                continue
+
+            doc = self.nlp(block.text)
+            results.append(self._process_doc(doc))
+
+        return results

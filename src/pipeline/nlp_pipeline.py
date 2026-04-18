@@ -1,45 +1,37 @@
 import logging
+
+from domain.ir import BlockIR, DocumentIR
 from domain.nlp_result import NLPResult
 from ner.ner_extractor import NERExtractor
 from relation_extraction.relation_extractor import RelationExtractor
-from text_processing.cleaner import TextCleaner
-from text_processing.sentence_splitter import SentenceSplitter
 
 lg = logging.getLogger(__name__)
+
 
 class NLPPipeline:
     def __init__(
         self,
         ner: NERExtractor,
         relation_extractor: RelationExtractor,
-        cleaner: TextCleaner | None = None,
-        splitter: SentenceSplitter | None = None,
     ):
-        self.ner: NERExtractor = ner
-        self.relation_extractor: RelationExtractor = relation_extractor
-        self.cleaner: TextCleaner = cleaner or TextCleaner()
-        self.splitter: SentenceSplitter = splitter or SentenceSplitter()
+        self.ner = ner
+        self.relation_extractor = relation_extractor
 
-    def process(self, text: str) -> NLPResult:
-        """
-        text: str - full text from file
+    def process(self, doc: DocumentIR) -> NLPResult:
+        lg.info("1. IR traversal")
 
-        return: NLPResult - formatted and cleaned text
-        """
-        lg.info("1. NLP: Clearing...")
-        clean_text = self.cleaner.clear(text)
+        blocks: list[BlockIR] = []
+        for section in doc.sections:
+            for block in section.blocks:
+                blocks.append(block)
 
-        lg.info("2. NLP: Splitting...")
-        sentences = self.splitter.split(clean_text)
+        lg.info("2. NER (IR-aware)")
+        entities = self.ner.extract_blocks(blocks)
 
-        lg.info("3.1. NLP: Extracting entities (NER)...")
-        entities = self.ner.extract_batch(sentences)
-        lg.info("3.2. NLP: Extracting relations (RE)...")
-        relations = self.relation_extractor.extract_batch(sentences)
+        lg.info("3. RE (IR-aware)")
+        relations = self.relation_extractor.extract_blocks(blocks)
 
         return NLPResult(
-            clean_text=clean_text,
-            sentences=sentences,
             entities=entities,
             relations=relations,
         )

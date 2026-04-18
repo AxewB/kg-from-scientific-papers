@@ -6,3 +6,4 @@ from domain.entity import Entity
 class SentenceEntities(BaseModel):
     text: str
     entities: list[Entity]
+    source_block_id: str | None = None
