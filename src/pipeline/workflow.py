@@ -9,6 +9,8 @@ from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
 from helpers.paper_state import PaperState
 from pipeline.graph_sink import Neo4jSink
+from pipeline.kg_analyzer import KGAnalyzer
+from pipeline.metrics_collector import MetricsCollector, PaperMetrics
 from pipeline.nlp_pipeline import NLPPipeline
 from text_processing.tei_parser import TEIParser
 
@@ -23,13 +25,15 @@ class Workflow:
         pipeline: NLPPipeline,
         sink: Neo4jSink,
     ):
-        self.downloader = downloader
-        self.grobid = grobid
-        self.pipeline = pipeline
-        self.sink = sink
+        self.downloader: DownloaderBase = downloader
+        self.grobid: GrobidClient = grobid
+        self.pipeline: NLPPipeline = pipeline
+        self.sink: Neo4jSink = sink
+
+        self.metrics: MetricsCollector = MetricsCollector()
+        self.analyzer: KGAnalyzer = KGAnalyzer()
 
     def run(self):
-        # papers: list[Paper] = self.downloader.download()
         papers: list[Paper] = self.downloader.get_local_papers()
 
         if not self.grobid.is_alive():
@@ -41,14 +45,49 @@ class Workflow:
             lg.info(f"Processing paper {i + 1} out of {total_papers}")
             try:
                 state = PaperState(paper.path.parent)
+                paper_metrics: PaperMetrics = self.metrics.start_paper(paper.id)
 
-                self._step_grobid(state, paper.path)
-                doc_ir, result = self._step_nlp(state)
-                self._step_neo4j(paper, doc_ir, result)
+                # --- GROBID ---
+                stop = self.metrics.time_stage(paper_metrics, "grobid")
+                try:
+                    self._step_grobid(state, paper.path)
+                finally:
+                    stop()
+
+                # --- NLP ---
+                stop = self.metrics.time_stage(paper_metrics, "nlp")
+                try:
+                    doc_ir, result = self._step_nlp(state)
+                finally:
+                    stop()
+
+                # --- ANALYSIS ---
+                analysis = self.analyzer.analyze(result)
+
+                paper_metrics.sentences = len(result.relations)
+                paper_metrics.relations = analysis["relations"]
+                paper_metrics.entities = analysis["unique_entities"]
+
+                # доп. признаки
+                paper_metrics.extra.update(analysis)
+                paper_metrics.extra["text_length"] = len(doc_ir.raw_text or "")
+
+                # --- NEO4J ---
+                stop = self.metrics.time_stage(paper_metrics, "neo4j")
+                try:
+                    self._step_neo4j(paper, doc_ir, result)
+                finally:
+                    stop()
 
             except Exception as e:
                 lg.info(f"[skip paper {paper.id}] {e}")
                 continue
+
+        self.metrics.save_raw()
+        self.metrics.standard_analysis()
+        self.metrics.plot_stage_times()
+        self.metrics.plot_complexity()
+        self.metrics.plot_distributions()
 
     # --- steps
 
@@ -73,8 +112,7 @@ class Workflow:
         doc_ir = parser.parse(doc_id=state.dir.name)
 
         if state.nlp.exists():
-            result = self._load_nlp(state)
-            return doc_ir, result
+            return doc_ir, self._load_nlp(state)
 
         lg.info("Starting NLP processing...")
         result = self.pipeline.process(doc_ir)
