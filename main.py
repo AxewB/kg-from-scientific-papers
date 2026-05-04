@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from data_extraction.grobid import GrobidClient
 from db.neo4j_writer import Neo4jGraphWriter
 from downloader.arxiv_downloader import ArxivDownloader
-from extractors.tei_extractor import TEIExtractor
 from helpers import logger
 from helpers.paths import paths
 from ner.ner_extractor import NERExtractor
@@ -19,12 +18,14 @@ from pipeline.nlp_pipeline import NLPPipeline
 from pipeline.workflow import Workflow
 from relation_extraction.relation_extractor import RelationExtractor
 
+# Добавить передаваемые параметры
+# Добавить проверку параметров
+
 
 def main():
-    # initiating global logger
-    logger.init_logger(paths.log_file())
+    logger.init_logger(paths.log_file())  # initiating global logger
 
-    # getting logger by app name
+    # getting logger by file name
     lg = logging.getLogger(__name__)
 
     lg.info("Initializing downloader...")
@@ -33,21 +34,21 @@ def main():
             "cs.AI",
             # "cs.AR",
             # "cs.CC",
+            # "math.SG",
+            # "math.SP",
+            # "q-fin.CP",
+            # "q-fin.EC",
+            # "q-fin.GN",
         ],
         num_each=1,
     )
 
-    nlp_model = "en_core_web_trf"
-
-    lg.info(f"Initializing NLP model {nlp_model}...")
-    nlp = spacy.load(nlp_model)
-
     lg.info("Initializing NER and RE extractors...")
-    ner = NERExtractor(nlp)
-    re = RelationExtractor(nlp)
+    ner = NERExtractor()
+    re = RelationExtractor(ner)
 
     lg.info("Configuring NLP pipeline...")
-    pipeline = NLPPipeline(ner, re)
+    pipeline = NLPPipeline(re)
 
     lg.info("Setting up Neo4j configuration...")
     db = Neo4jGraphWriter(
@@ -59,16 +60,12 @@ def main():
     lg.info("Creating sink for Neo4j...")
     sink = Neo4jSink(db)
 
-    lg.info("Creating text extractor...")
-    extractor = TEIExtractor(root_dir=paths.papers)
-
     lg.info("Configuring GROBID...")
     grobid = GrobidClient()
 
     lg.info("Setting up workflow...")
     workflow = Workflow(
         downloader=downloader,
-        extractor=extractor,
         grobid=grobid,
         pipeline=pipeline,
         sink=sink,

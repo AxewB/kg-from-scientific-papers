@@ -1,16 +1,11 @@
 from dataclasses import dataclass
-from typing import Literal
-
-NodeType = Literal["Paper", "Category", "Domain", "Entity"]
 
 
-@dataclass(slots=True)
+@dataclass
 class KGTriple:
-    subject: str
+    subject_id: str
+    object_id: str
     predicate: str
-    object: str
-
-    subject_type: NodeType = "Entity"
-    object_type: NodeType = "Entity"
-
-    paper: str | None = None
+    paper_id: str | None
+    subject_label: str | None = None
+    object_label: str | None = None

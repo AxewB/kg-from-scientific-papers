@@ -1,4 +1,6 @@
 import logging
+
+import spacy
 from spacy.language import Language
 from spacy.tokens import Doc
 
@@ -6,12 +8,15 @@ from domain.entity import Entity
 from domain.ir import BlockIR
 from domain.sentence_entities import SentenceEntities
 
-
 lg = logging.getLogger(__name__)
 
+ALLOWED_LABELS = {"PERSON", "ORG", "GPE", "PRODUCT", "WORK_OF_ART"}
+
 class NERExtractor:
-    def __init__(self, nlp: Language):
-        self.nlp = nlp
+    def __init__(self, nlp_model: str = "en_core_web_trf", allowed_labels: set[str] = ALLOWED_LABELS):
+
+        self.nlp: Language = spacy.load(nlp_model)
+        self.allowed_labels = allowed_labels
 
     def _process_doc(self, doc: Doc, block_id: str | None = None) -> SentenceEntities:
         return SentenceEntities(
@@ -47,3 +52,13 @@ class NERExtractor:
             results.append(self._process_doc(doc, block_id=getattr(block, "id", None)))
 
         return results
+
+
+    def is_valid_entity(self, text: str) -> bool:
+        doc = self.nlp(text)
+
+        for ent in doc.ents:
+            if ent.label_ in self.allowed_labels:
+                return True
+
+        return False

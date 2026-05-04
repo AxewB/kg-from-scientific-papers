@@ -1,9 +1,4 @@
-from dataclasses import asdict
-from typing import Any
-
 from neo4j import GraphDatabase
-
-from domain.kg_triple import KGTriple
 
 
 class Neo4jGraphWriter:
@@ -13,26 +8,30 @@ class Neo4jGraphWriter:
     def close(self) -> None:
         self.driver.close()
 
-    def write_triples(self, triples: list[KGTriple]) -> None:
+    def write_triples(self, triples):
         if not triples:
             return
 
-        payload = [asdict(t) for t in triples]
+        payload = [t.__dict__ for t in triples]
 
         with self.driver.session() as session:
             session.execute_write(self._write_batch, payload)
 
     @staticmethod
-    def _write_batch(tx, triples: list[dict[str, Any]]) -> None:
+    def _write_batch(tx, triples):
+        # print(triples)
         query = """
         UNWIND $triples AS t
 
-        MERGE (s:Entity {name: t.subject, type: t.subject_type})
-        MERGE (o:Entity {name: t.object, type: t.object_type})
+        MERGE (a:Entity {id: t.subject_id})
+        SET a.label = coalesce(t.subject_label, t.subject_id)
 
-        MERGE (s)-[r:RELATION {type: t.predicate}]->(o)
+        MERGE (b:Entity {id: t.object_id})
+        SET b.label = coalesce(t.object_label, t.object_id)
+
+        MERGE (a)-[r:RELATION {type: t.predicate}]->(b)
+        SET r.paper_id = t.paper_id
 
         RETURN count(*)
         """
-
         tx.run(query, triples=triples)

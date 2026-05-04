@@ -1,8 +1,6 @@
-from dataclasses import dataclass
 from typing import TypedDict
 
 
-@dataclass
 class ParsedPaper(TypedDict):
     title: str | None
     authors: list[str] | None
@@ -10,3 +8,4 @@ class ParsedPaper(TypedDict):
     keywords: list[str] | None
     sections: list[dict[str, str | None]] | None
     full_text: str | None
+

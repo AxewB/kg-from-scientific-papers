@@ -1,55 +1,39 @@
-import logging
-from db.neo4j_writer import Neo4jGraphWriter
 from domain.kg_triple import KGTriple
-from domain.paper import Paper
-from pipeline.nlp_pipeline import NLPResult
+from pipeline.entity_resolver import EntityResolver
 
-lg = logging.getLogger(__name__)
 
 class Neo4jSink:
-    def __init__(self, db_writer: Neo4jGraphWriter):
-        self.db: Neo4jGraphWriter = db_writer
+    def __init__(self, db_writer):
+        self.db = db_writer
+        self.resolver = EntityResolver()
 
-    def write(self, paper: Paper, result: NLPResult) -> None:
-        triples: list[KGTriple] = []
+    def write(self, paper, result):
+        triples = []
 
-        # 1. paper -> category -> domain
-        for category in paper.categories:
-            triples.append(
-                KGTriple(
-                    subject=paper.id,
-                    predicate="HAS_CATEGORY",
-                    object=category.code,
-                    subject_type="Paper",
-                    object_type="Category",
-                    paper=paper.id,
-                )
-            )
+        paper_id = paper.id
 
-            triples.append(
-                KGTriple(
-                    subject=category.code,
-                    predicate="PART_OF",
-                    object=category.parent.value,
-                    subject_type="Category",
-                    object_type="Domain",
-                )
-            )
-
-        # 2. NLP relations
-        for sentence in result.relations:
-            for rel in sentence.relations:
+        for sent in result.relations:
+            for rel in sent.relations:
                 if not rel.relation:
                     continue
 
+                subj = rel.subject.strip()
+                obj = rel.target.strip()
+
+                if not subj or not obj:
+                    continue
+
+                subj_id = self.resolver.get_id(subj)
+                obj_id = self.resolver.get_id(obj)
+
                 triples.append(
                     KGTriple(
-                        subject=rel.subject,
+                        subject_id=subj_id,
+                        object_id=obj_id,
                         predicate=rel.relation,
-                        object=rel.target,
-                        subject_type="Entity",
-                        object_type="Entity",
-                        paper=paper.id,
+                        paper_id=paper_id,
+                        subject_label=subj,
+                        object_label=obj,
                     )
                 )
 

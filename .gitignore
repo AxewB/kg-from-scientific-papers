@@ -1,6 +1,7 @@
 # my ignore list
 .cache
 .log
+temp.md
 
 ###
 ### DEFAULT IGNORE LIST

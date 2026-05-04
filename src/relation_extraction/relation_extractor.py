@@ -1,119 +1,137 @@
-from collections.abc import Iterable
+import logging
 
-from spacy.language import Language
-from spacy.tokens import Doc, Span, Token
+from tqdm import tqdm
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-from domain.entity import Entity
 from domain.ir import BlockIR
 from domain.relation import RelationTriple
 from domain.sentence import Sentence
 
+lg = logging.getLogger(__name__)
+
 
 class RelationExtractor:
-    MAX_TOKEN_DISTANCE: int = 40
+    """
+    Transformer-based relation extraction using REBEL model.
+    """
 
-    def __init__(self, nlp: Language):
-        self.nlp = nlp
+    def __init__(self, ner_extractor, model_name="Babelscape/rebel-large"):
+        self.ner = ner_extractor
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
-    # validation
 
-    def _is_valid_entity(self, text: str) -> bool:
-        text = text.strip()
-        if len(text) < 2:
-            return False
-        if text.isdigit():
-            return False
-        return True
+    # --- core inference
 
-    # entity conversion
+    def _extract_triples(self, text: str) -> list[RelationTriple]:
+        input_text = f"extract triplets: {text}"
 
-    def _to_entity(self, ent: Span) -> Entity:
-        return Entity(
-            text=ent.text,
-            label=ent.label_,
-            start_char=ent.start_char,
-            end_char=ent.end_char,
-            start_token=ent.start,
-            end_token=ent.end,
+        inputs = self.tokenizer(
+            input_text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=512,
         )
 
-    # core logic
-
-    def _entity_pairs(self, doc: Doc) -> Iterable[tuple[Entity, Entity, Span]]:
-        for sent in doc.sents:
-            entities = [self._to_entity(e) for e in sent.ents]
-
-            for i, left in enumerate(entities):
-                for right in entities[i + 1 :]:
-                    if (right.start_token - left.end_token) > self.MAX_TOKEN_DISTANCE:
-                        continue
-                    yield left, right, sent
-
-    def _find_relation_verb(
-        self, doc: Doc, left: Entity, right: Entity
-    ) -> Token | None:
-        left_tok = doc[left.start_token]
-        right_tok = doc[right.start_token]
-
-        # dependency-based heuristic:
-        # ищем общий предок
-        ancestors: set[Token] = set()
-        cur = left_tok
-
-        while cur != cur.head:
-            ancestors.add(cur.head)
-            cur = cur.head
-
-        cur = right_tok
-        while cur != cur.head:
-            if cur.head in ancestors and cur.head.pos_ == "VERB":
-                return cur.head
-            cur = cur.head
-
-        return None
-
-    def _build_relation(
-        self,
-        left: Entity,
-        right: Entity,
-        verb: Token | None,
-        sentence: str,
-    ) -> RelationTriple | None:
-
-        if not (self._is_valid_entity(left.text) and self._is_valid_entity(right.text)):
-            return None
-
-        return RelationTriple(
-            subject=left.text,
-            subject_label=left.label,
-            target=right.text,
-            target_label=right.label,
-            relation=verb.text if verb else None,
-            sentence=sentence,
+        outputs = self.model.generate(
+            **inputs,
+            max_length=256,
+            num_beams=3,
+            length_penalty=0,
+            no_repeat_ngram_size=3,
+            early_stopping=True,
         )
 
-    def _process_doc(self, doc: Doc) -> Sentence:
-        relations: list[RelationTriple] = []
+        decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=False)
 
-        for left, right, sent in self._entity_pairs(doc):
-            verb = self._find_relation_verb(doc, left, right)
-            rel = self._build_relation(left, right, verb, sent.text)
-            if rel:
-                relations.append(rel)
+        #print("\n=== REBEL RAW OUTPUT ===")
+        #print(decoded)
+        #print("========================\n")
 
-        return Sentence(text=doc.text, relations=relations)
 
-    def extract_str(self, texts: list[str]) -> list[Sentence]:
-        return [self._process_doc(doc) for doc in self.nlp.pipe(texts)]
+        triples = self._parse_rebel_output(decoded, text)
+
+        #print("PARSED:", triples)
+
+        return triples
+
+    # --- REBEL output parsing
+
+    def _parse_rebel_output(self, text: str, original: str):
+        triples = []
+
+        #print("\n[DEBUG RAW TEXT]")
+        #print(text)
+
+        chunks = text.split("<triplet>")
+
+        #print("\n[DEBUG CHUNKS]")
+        # for i, c in enumerate(chunks):
+        #     print(f"CHUNK {i}: {repr(c)}")
+
+        for chunk in chunks:
+            chunk = chunk.strip()
+
+            #print("\n[DEBUG PROCESS CHUNK]")
+            #print("RAW:", repr(chunk))
+
+            if "<subj>" not in chunk or "<obj>" not in chunk:
+                #print("SKIP: missing tags")
+                continue
+
+            try:
+                subj = chunk.split("<subj>")[0].strip()
+                rest = chunk.split("<subj>")[1]
+
+                obj = rest.split("<obj>")[0].strip()
+                rel = rest.split("<obj>")[1].replace("</s>", "").strip()
+
+                #print("SUBJ:", subj)
+                #print("OBJ:", obj)
+                #print("REL:", rel)
+
+                if not subj or not obj:
+                    #print("SKIP: empty subj/obj")
+                    continue
+
+                triples.append(
+                    RelationTriple(
+                        subject=subj,
+                        subject_label=None,
+                        target=obj,
+                        target_label=None,
+                        relation=rel if rel else None,
+                        sentence=original,
+                    )
+                )
+
+            except Exception as e:
+                # print("ERROR:", e)
+                continue
+
+        #print("\nFINAL TRIPLES:", triples)
+
+        return triples
+
+    # --- block interface
 
     def extract_blocks(self, blocks: list[BlockIR]) -> list[Sentence]:
         results: list[Sentence] = []
 
-        for block in blocks:
+        for block in tqdm(blocks, desc="REBEL processing", unit="block"):
             if block.type != "text" or not block.text:
                 continue
 
-            doc = self.nlp(block.text)
-            results.append(self._process_doc(doc))
+            doc = self.ner.nlp(block.text)
+
+            for sent in doc.sents:
+                triples = self._extract_triples(sent.text)
+
+                results.append(
+                    Sentence(
+                        text=sent.text,
+                        relations=triples,
+                    )
+                )
 
         return results

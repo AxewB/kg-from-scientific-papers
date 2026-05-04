@@ -8,10 +8,10 @@ from domain.ir import BlockIR, DocumentIR, DocumentMeta, SectionIR
 from domain.nlp_result import NLPResult
 from domain.paper import Paper
 from downloader.downloader_base import DownloaderBase
-from extractors.extractor_base import ExtractorBase
 from helpers.paper_state import PaperState
 from pipeline.graph_sink import Neo4jSink
 from pipeline.nlp_pipeline import NLPPipeline
+from text_processing.tei_parser import TEIParser
 
 lg = logging.getLogger(__name__)
 
@@ -20,16 +20,14 @@ class Workflow:
     def __init__(
         self,
         downloader: DownloaderBase,
-        extractor: ExtractorBase,
         grobid: GrobidClient,
         pipeline: NLPPipeline,
         sink: Neo4jSink,
     ):
-        self.downloader: DownloaderBase = downloader
-        self.extractor: ExtractorBase = extractor
-        self.grobid: GrobidClient = grobid
-        self.pipeline: NLPPipeline = pipeline
-        self.sink: Neo4jSink = sink
+        self.downloader = downloader
+        self.grobid = grobid
+        self.pipeline = pipeline
+        self.sink = sink
 
     def run(self):
         papers: list[Paper] = self.downloader.download()
@@ -44,13 +42,8 @@ class Workflow:
             try:
                 state = PaperState(paper.path.parent)
 
-                # Step 1. GROBID
                 self._step_grobid(state, paper.path)
-
-                # Step 2. NLP (NER, RE)
                 result = self._step_nlp(state)
-
-                # Step 3. Push triples to Neo4j
                 self._step_neo4j(paper, result)
 
             except Exception as e:
@@ -61,6 +54,7 @@ class Workflow:
 
     def _step_grobid(self, state: PaperState, paper_path: Path) -> None:
         lg.info("Doing GROBID step...")
+
         if state.is_valid_tei():
             return
 
@@ -69,23 +63,25 @@ class Workflow:
         if not tei_xml or not tei_xml.strip():
             raise ValueError("Empty TEI from GROBID")
 
-        _ = state.tei.write_text(tei_xml, encoding="utf-8")
+        state.tei.write_text(tei_xml, encoding="utf-8")
 
     def _step_nlp(self, state: PaperState) -> NLPResult:
         lg.info("Doing NLP step...")
-        tei_text = state.tei.read_text(encoding="utf-8")
 
-        parsed = self.extractor.extract(tei_text)
-        doc_ir = self._to_document_ir(parsed, doc_id=state.dir.name)
-
-        # either we read or we count
         if state.nlp.exists():
             return self._load_nlp(state)
+
+        tei_text = state.tei.read_text(encoding="utf-8")
+
+        parser = TEIParser.from_xml(tei_text)
+        parsed = parser.parse()
+
+        doc_ir = self._to_document_ir(parsed, doc_id=state.dir.name)
 
         lg.info("Starting NLP processing...")
         result = self.pipeline.process(doc_ir)
 
-        _ = state.nlp.write_text(
+        state.nlp.write_text(
             json.dumps(result.model_dump(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -99,22 +95,28 @@ class Workflow:
     # --- helpers
 
     def _load_nlp(self, state: PaperState) -> NLPResult:
-        data = json.loads(state.nlp.read_text(encoding="utf-8"))  # pyright: ignore[reportAny]
+        data = json.loads(state.nlp.read_text(encoding="utf-8"))
         return NLPResult.model_validate(data)
+
+    def _normalize(self, text: str | None) -> str | None:
+        if not text:
+            return text
+        return " ".join(text.split())
 
     def _to_document_ir(self, parsed: dict[str, Any], doc_id: str) -> DocumentIR:
         sections_data = parsed.get("sections") or []
         sections: list[SectionIR] = []
 
         for idx, section in enumerate(sections_data):
-            text = section.get("text")
+            text = self._normalize(section.get("text"))
+
             blocks: list[BlockIR] = []
             if text:
                 blocks.append(BlockIR(type="text", text=text))
 
             sections.append(
                 SectionIR(
-                    title=section.get("title"),
+                    title=self._normalize(section.get("title")),
                     level=idx + 1,
                     blocks=blocks,
                 )
@@ -123,13 +125,13 @@ class Workflow:
         return DocumentIR(
             doc_id=doc_id,
             meta=DocumentMeta(
-                title=parsed.get("title"),
+                title=self._normalize(parsed.get("title")),
                 authors=parsed.get("authors") or [],
-                abstract=parsed.get("abstract"),
+                abstract=self._normalize(parsed.get("abstract")),
                 keywords=parsed.get("keywords") or [],
             ),
             sections=sections,
-            references=[],
-            formulas=[],
-            raw_text=parsed.get("full_text"),
+            references=[],  # пока не используешь
+            formulas=[],  # осознанно игнорируешь
+            raw_text=self._normalize(parsed.get("full_text")),
         )
