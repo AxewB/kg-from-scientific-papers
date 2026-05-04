@@ -1,6 +1,6 @@
 import xml.etree.ElementTree as ET
 
-from domain.parsed_paper import ParsedPaper
+from domain.ir import BlockIR, DocumentIR, DocumentMeta, SectionIR
 
 NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 
@@ -105,17 +105,49 @@ class TEIParser:
 
         return "\n\n".join(paragraphs)
 
-    def parse(self) -> ParsedPaper:
-        return ParsedPaper(
-            title=self.get_title() or None,
-            authors=self.get_authors() or None,
-            abstract=self.get_abstract() or None,
-            keywords=self.get_keywords() or None,
-            sections=self.get_sections() or None,
-            full_text=self.get_full_text() or None,
+    def parse(self, doc_id: str) -> DocumentIR:
+        return DocumentIR(
+            doc_id=doc_id,
+            meta=DocumentMeta(
+                title=self.get_title(),
+                authors=self.get_authors() or [],
+                abstract=self.get_abstract(),
+                keywords=self.get_keywords() or [],
+            ),
+            sections=self._build_sections(),
+            references=[],
+            formulas=[],
+            raw_text=self.get_full_text(),
         )
 
     # private
+
+    def _build_sections(self) -> list[SectionIR]:
+        sections = []
+
+        for idx, div in enumerate(self.root.findall(".//tei:body/tei:div", NS)):
+            head = div.find("tei:head", NS)
+            title = head.text.strip() if head is not None and head.text else None
+
+            paragraphs = [
+                "".join(p.itertext()).strip() for p in div.findall("tei:p", NS)
+            ]
+
+            text = "\n\n".join(p for p in paragraphs if p)
+
+            blocks = []
+            if text:
+                blocks.append(BlockIR(type="text", text=text))
+
+            sections.append(
+                SectionIR(
+                    title=title,
+                    level=idx + 1,
+                    blocks=blocks,
+                )
+            )
+
+        return sections
 
     def _strip_refs(self):
         for ref in self.root.findall(".//tei:ref", NS):

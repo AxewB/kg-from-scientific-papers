@@ -1,5 +1,4 @@
 import logging
-
 from tqdm import tqdm
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
@@ -15,19 +14,27 @@ class RelationExtractor:
     Transformer-based relation extraction using REBEL model.
     """
 
+    BAD_ENTITIES = {
+        "extract triplets",
+        "extract triplet",
+        "triplet",
+        "relation",
+        "entity",
+    }
+
     def __init__(self, ner_extractor, model_name="Babelscape/rebel-large"):
         self.ner = ner_extractor
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
-
-    # --- core inference
+    # --------------------
+    # inference
+    # --------------------
 
     def _extract_triples(self, text: str) -> list[RelationTriple]:
-        input_text = f"extract triplets: {text}"
-
+        # ВАЖНО: убран instruction prompt
         inputs = self.tokenizer(
-            input_text,
+            text,
             return_tensors="pt",
             truncation=True,
             max_length=512,
@@ -42,41 +49,40 @@ class RelationExtractor:
             early_stopping=True,
         )
 
-        decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=False)
+        decoded = self.tokenizer.decode(
+            outputs[0],
+            skip_special_tokens=False
+        )
 
-        #print("\n=== REBEL RAW OUTPUT ===")
-        #print(decoded)
-        #print("========================\n")
+        return self._parse_rebel_output(decoded, text)
 
+    # --------------------
+    # parsing
+    # --------------------
 
-        triples = self._parse_rebel_output(decoded, text)
+    def _is_valid(self, x: str | None) -> bool:
+        if not x:
+            return False
 
-        #print("PARSED:", triples)
+        x = x.strip().lower()
 
-        return triples
+        if x in self.BAD_ENTITIES:
+            return False
 
-    # --- REBEL output parsing
+        if len(x) < 2:
+            return False
+
+        return True
 
     def _parse_rebel_output(self, text: str, original: str):
         triples = []
 
-        #print("\n[DEBUG RAW TEXT]")
-        #print(text)
-
         chunks = text.split("<triplet>")
-
-        #print("\n[DEBUG CHUNKS]")
-        # for i, c in enumerate(chunks):
-        #     print(f"CHUNK {i}: {repr(c)}")
 
         for chunk in chunks:
             chunk = chunk.strip()
 
-            #print("\n[DEBUG PROCESS CHUNK]")
-            #print("RAW:", repr(chunk))
-
             if "<subj>" not in chunk or "<obj>" not in chunk:
-                #print("SKIP: missing tags")
                 continue
 
             try:
@@ -86,12 +92,20 @@ class RelationExtractor:
                 obj = rest.split("<obj>")[0].strip()
                 rel = rest.split("<obj>")[1].replace("</s>", "").strip()
 
-                #print("SUBJ:", subj)
-                #print("OBJ:", obj)
-                #print("REL:", rel)
+                # -----------------------
+                # CLEANING / FILTERING
+                # -----------------------
+                if not self._is_valid(subj) or not self._is_valid(obj):
+                    continue
 
-                if not subj or not obj:
-                    #print("SKIP: empty subj/obj")
+                # # NER FILTER (обязательно)
+                # if not self.ner.is_valid_entity(subj):
+                #     continue
+
+                # if not self.ner.is_valid_entity(obj):
+                #     continue
+
+                if not rel:
                     continue
 
                 triples.append(
@@ -100,20 +114,19 @@ class RelationExtractor:
                         subject_label=None,
                         target=obj,
                         target_label=None,
-                        relation=rel if rel else None,
+                        relation=rel,
                         sentence=original,
                     )
                 )
 
-            except Exception as e:
-                # print("ERROR:", e)
+            except Exception:
                 continue
-
-        #print("\nFINAL TRIPLES:", triples)
 
         return triples
 
-    # --- block interface
+    # --------------------
+    # block interface
+    # --------------------
 
     def extract_blocks(self, blocks: list[BlockIR]) -> list[Sentence]:
         results: list[Sentence] = []
@@ -126,6 +139,10 @@ class RelationExtractor:
 
             for sent in doc.sents:
                 triples = self._extract_triples(sent.text)
+
+                # защита от пустых предложений
+                if not triples:
+                    continue
 
                 results.append(
                     Sentence(
