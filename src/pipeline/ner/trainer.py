@@ -16,6 +16,9 @@ from transformers import (
 )
 from tqdm import tqdm
 
+from domain.entity import scierc_ner_label_to_bio_suffix
+from datasets.scierc_loader import ner_global_to_local
+
 lg = logging.getLogger(__name__)
 
 
@@ -34,9 +37,10 @@ def _scierc_to_bio(entities: list[tuple[int, int, str]], tokens: list[str]) -> l
     for start, end, label in sorted(entities, key=lambda x: (x[0], x[1])):
         if start < 0 or end >= len(tokens) or start > end:
             continue
-        tags[start] = f"B-{label.upper()}"
+        suffix = scierc_ner_label_to_bio_suffix(label)
+        tags[start] = f"B-{suffix}"
         for i in range(start + 1, end + 1):
-            tags[i] = f"I-{label.upper()}"
+            tags[i] = f"I-{suffix}"
     return tags
 
 
@@ -50,8 +54,14 @@ class NERDataset(Dataset):
     ) -> None:
         self.samples: list[dict[str, list[int]]] = []
         for row in tqdm(rows, desc="Building NER samples", unit="doc"):
-            for sentence_tokens, sentence_ner in zip(row["sentences"], row["ner"]):
-                tags = _scierc_to_bio(sentence_ner, sentence_tokens)
+            sentences = row["sentences"]
+            for sent_idx, (sentence_tokens, sentence_ner) in enumerate(zip(sentences, row["ner"])):
+                local_ner: list[tuple[int, int, str]] = []
+                for g_s, g_e, lab in sentence_ner:
+                    loc = ner_global_to_local(sentences, sent_idx, g_s, g_e)
+                    if loc is not None:
+                        local_ner.append((loc[0], loc[1], lab))
+                tags = _scierc_to_bio(local_ner, sentence_tokens)
                 enc = tokenizer(
                     sentence_tokens,
                     is_split_into_words=True,
@@ -105,8 +115,9 @@ class SciBERTNERTrainer:
         for row in train_records + dev_records:
             for sent_ner in row["ner"]:
                 for _, _, label in sent_ner:
-                    label_set.add(f"B-{label.upper()}")
-                    label_set.add(f"I-{label.upper()}")
+                    suffix = scierc_ner_label_to_bio_suffix(label)
+                    label_set.add(f"B-{suffix}")
+                    label_set.add(f"I-{suffix}")
 
         id2label = {i: label for i, label in enumerate(sorted(label_set))}
         label2id = {label: idx for idx, label in id2label.items()}

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from datasets.scierc_loader import ner_global_to_local
+
 
 def mark_entity_pair(
     tokens: list[str],
@@ -30,12 +32,21 @@ def build_relation_examples(record: dict, include_none: bool = True) -> list[dic
     for sent_idx, tokens in enumerate(record["sentences"]):
         entities = record["ner"][sent_idx]
         gold_relations = record["relations"][sent_idx]
+        sentences = record["sentences"]
 
         rel_map: dict[tuple[tuple[int, int], tuple[int, int]], str] = {}
         for h_start, h_end, t_start, t_end, rel_type in gold_relations:
-            rel_map[((h_start, h_end), (t_start, t_end))] = rel_type.upper()
+            hh = ner_global_to_local(sentences, sent_idx, h_start, h_end)
+            tt = ner_global_to_local(sentences, sent_idx, t_start, t_end)
+            if hh is None or tt is None:
+                continue
+            rel_map[(hh, tt)] = rel_type.upper()
 
-        spans = [(start, end) for start, end, _ in entities]
+        spans: list[tuple[int, int]] = []
+        for g_s, g_e, _ in entities:
+            loc = ner_global_to_local(sentences, sent_idx, g_s, g_e)
+            if loc is not None:
+                spans.append(loc)
         for head in spans:
             for tail in spans:
                 if head == tail:
