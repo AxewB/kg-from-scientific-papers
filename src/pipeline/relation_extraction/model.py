@@ -1,9 +1,7 @@
 from pydantic import BaseModel
 
-from domain.entity import Entity
 from domain.relation import Relation
 
 
-class NLPResult(BaseModel):
-    entities: list[Entity]
+class REPrediction(BaseModel):
     relations: list[Relation]

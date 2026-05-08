@@ -110,3 +110,26 @@ class MetricsCollector:
 
         plt.savefig(paths.figures / "complexity.png")
         plt.close()
+
+    # evaluation
+    def evaluate_entities(self, gold: set[str], pred: set[str]) -> dict[str, float]:
+        tp = len(gold & pred)
+        fp = len(pred - gold)
+        fn = len(gold - pred)
+        return self._prf1(tp, fp, fn)
+
+    def evaluate_relations(self, gold: set[tuple[str, str, str]], pred: set[tuple[str, str, str]]) -> dict[str, float]:
+        tp = len(gold & pred)
+        fp = len(pred - gold)
+        fn = len(gold - pred)
+        return self._prf1(tp, fp, fn)
+
+    def _prf1(self, tp: int, fp: int, fn: int) -> dict[str, float]:
+        precision = tp / (tp + fp) if (tp + fp) else 0.0
+        recall = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+        return {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }

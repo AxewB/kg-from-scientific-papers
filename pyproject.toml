@@ -13,6 +13,9 @@ dependencies = [
   "lxml",
   "spacy",
   "spacy-transformers",
+  "transformers",
+  "torch",
+  "accelerate",
   "neo4j",
 ]
 

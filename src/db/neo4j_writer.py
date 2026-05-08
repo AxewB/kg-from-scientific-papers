@@ -34,35 +34,16 @@ class Neo4jGraphWriter:
                 },
             )
 
-    def write_sentences(self, paper_id, sentences):
-        lg.info("Writing sentences")
-
-        payload = [
-            {"id": f"{paper_id}::s{i}", "text": s.text} for i, s in enumerate(sentences)
-        ]
-
-        query = """
-        UNWIND $rows AS row
-        MERGE (s:Sentence {id: row.id})
-        SET s.text = row.text
-
-        WITH row, s
-        MERGE (p:Paper {id: $paper_id})
-        MERGE (p)-[:HAS_SENTENCE]->(s)
-        """
-
-        with self.driver.session() as s:
-            s.run(query, rows=payload, paper_id=paper_id)
-
-    def write_entities(self, entities: dict[str, str]):
+    def write_entities(self, entities: dict[str, dict[str, str]]):
         lg.info("Writing entities")
 
-        payload = [{"id": k, "label": v} for k, v in entities.items()]
+        payload = [{"id": k, "text": v["text"], "type": v["type"]} for k, v in entities.items()]
 
         query = """
         UNWIND $rows AS row
         MERGE (e:Entity {id: row.id})
-        SET e.label = row.label
+        SET e.text = row.text,
+            e.type = row.type
         """
 
         with self.driver.session() as s:
@@ -73,7 +54,7 @@ class Neo4jGraphWriter:
         lg.info("Writing mentions")
         query = """
         UNWIND $rows AS row
-        MATCH (s:Sentence {id: row.sentence_id})
+        MERGE (s:Sentence {id: row.sentence_id})
         MATCH (e:Entity {id: row.entity_id})
         MERGE (s)-[:MENTIONS]->(e)
         """
@@ -82,19 +63,22 @@ class Neo4jGraphWriter:
             s.run(query, rows=mentions)
 
     def write_relations(self, relations):
-
         lg.info("Writing relations")
-        query = """
-        UNWIND $rows AS row
-        MATCH (e1:Entity {id: row.subj})
-        MATCH (e2:Entity {id: row.obj})
-
-        MERGE (e1)-[r:RELATION {
-            type: row.rel,
-            paper_id: row.paper_id,
-            sentence_id: row.sentence_id
-        }]->(e2)
-        """
-
         with self.driver.session() as s:
-            s.run(query, rows=relations)
+            for row in relations:
+                rel_type = row["rel_type"]
+                query = f"""
+                MATCH (e1:Entity {{id: $subj}})
+                MATCH (e2:Entity {{id: $obj}})
+                MERGE (e1)-[r:{rel_type} {{
+                    paper_id: $paper_id,
+                    sentence_id: $sentence_id
+                }}]->(e2)
+                """
+                s.run(
+                    query,
+                    subj=row["subj"],
+                    obj=row["obj"],
+                    paper_id=row["paper_id"],
+                    sentence_id=row["sentence_id"],
+                )

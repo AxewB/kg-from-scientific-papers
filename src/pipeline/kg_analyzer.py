@@ -10,31 +10,13 @@ class KGAnalyzer:
         self.resolver = EntityResolver()
 
     def analyze(self, result: NLPResult) -> dict[str, float]:
-        sentences = result.relations
+        total_rel = len(result.relations)
+        total_sent = len({e.sentence_id for e in result.entities})
 
-        total_sent = len(sentences)
-        total_rel = sum(len(s.relations) for s in sentences)
+        entity_ids = [self.resolver.get_id(e.text) for e in result.entities]
+        relation_types = [r.type.value for r in result.relations]
 
-        entity_ids = []
-        relation_types = []
-
-        sentences_with_rel = 0
-
-        for s in sentences:
-            if s.relations:
-                sentences_with_rel += 1
-
-            for r in s.relations:
-                if not r.relation:
-                    continue
-
-                subj_id = self.resolver.get_id(r.subject)
-                obj_id = self.resolver.get_id(r.target)
-
-                entity_ids.append(subj_id)
-                entity_ids.append(obj_id)
-
-                relation_types.append(r.relation)
+        sentences_with_rel = len({r.head.sentence_id for r in result.relations})
 
         total_entity_mentions = len(entity_ids)
         unique_entities = len(set(entity_ids))

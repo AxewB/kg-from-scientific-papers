@@ -1,4 +1,5 @@
 import logging
+
 from db.neo4j_writer import Neo4jGraphWriter
 from domain.ir import DocumentIR
 from domain.nlp_result import NLPResult
@@ -18,49 +19,32 @@ class Neo4jSink:
 
         self.db.write_paper(paper_id=paper.id, meta=doc_ir.meta)
 
-        self.db.write_sentences(paper.id, result.relations)
-
         entities = {}
         mentions = []
         relations = []
 
-        for i, sentence in enumerate(result.relations):
-            sentence_id = f"{paper.id}::s{i}"
+        for entity in result.entities:
+            ent_id = self.resolver.get_id(entity.text)
+            entities[ent_id] = {"text": entity.text, "type": entity.label.value}
+            mentions.append(
+                {
+                    "sentence_id": f"{paper.id}::s{entity.sentence_id}",
+                    "entity_id": ent_id,
+                }
+            )
 
-            for rel in sentence.relations:
-                if not rel.relation:
-                    continue
-
-                subj_raw = rel.subject.strip()
-                obj_raw = rel.target.strip()
-
-                if not subj_raw or not obj_raw:
-                    continue
-
-                subj_id = self.resolver.get_id(subj_raw)
-                obj_id = self.resolver.get_id(obj_raw)
-
-                subj_label = self.resolver.resolve(subj_raw)
-                obj_label = self.resolver.resolve(obj_raw)
-
-                # entities
-                entities[subj_id] = subj_label
-                entities[obj_id] = obj_label
-
-                # mentions
-                mentions.append({"sentence_id": sentence_id, "entity_id": subj_id})
-                mentions.append({"sentence_id": sentence_id, "entity_id": obj_id})
-
-                # relations
-                relations.append(
-                    {
-                        "subj": subj_id,
-                        "obj": obj_id,
-                        "rel": rel.relation,
-                        "paper_id": paper.id,
-                        "sentence_id": sentence_id,
-                    }
-                )
+        for rel in result.relations:
+            subj_id = self.resolver.get_id(rel.head.text)
+            obj_id = self.resolver.get_id(rel.tail.text)
+            relations.append(
+                {
+                    "subj": subj_id,
+                    "obj": obj_id,
+                    "rel_type": rel.type.value.replace("-", "_"),
+                    "paper_id": paper.id,
+                    "sentence_id": f"{paper.id}::s{rel.head.sentence_id}",
+                }
+            )
 
         self.db.write_entities(entities)
         self.db.write_mentions(mentions)

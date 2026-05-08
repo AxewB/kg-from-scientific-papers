@@ -70,7 +70,7 @@ class Workflow:
                 # --- ANALYSIS ---
                 analysis = self.analyzer.analyze(result)
 
-                paper_metrics.sentences = len(result.relations)
+                paper_metrics.sentences = len({e.sentence_id for e in result.entities})
                 paper_metrics.relations = analysis["relations"]
                 paper_metrics.entities = analysis["entities"]
 

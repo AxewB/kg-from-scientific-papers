@@ -1,10 +1,11 @@
 import logging
 
 from domain.ir import DocumentIR
+from domain.entity import Entity
 from domain.nlp_result import NLPResult
-from pipeline.entity_normalizer import EntityNormalizer
-from pipeline.entity_resolver import EntityResolver
-from relation_extraction.relation_extractor import RelationExtractor
+from domain.relation import Relation
+from pipeline.ner.predictor import SciBERTNER
+from pipeline.relation_extraction.predictor import SciBERTRE
 
 lg = logging.getLogger(__name__)
 
@@ -12,52 +13,41 @@ lg = logging.getLogger(__name__)
 class NLPPipeline:
     def __init__(
         self,
-        relation_extractor: RelationExtractor,
+        ner: SciBERTNER,
+        relation_extractor: SciBERTRE,
     ):
+        self.ner = ner
         self.relation_extractor = relation_extractor
-        self.normalizer = EntityNormalizer()
-        self.resolver = EntityResolver()
 
     def process(self, doc: DocumentIR) -> NLPResult:
-        lg.info("1. IR traversal")
+        lg.info("1. IR traversal + sentence segmentation")
+        sentences = self._collect_sentences(doc)
 
-        blocks = [b for s in doc.sections for b in s.blocks]
+        lg.info("2. SciBERT NER")
+        all_entities: list[Entity] = []
+        all_relations: list[Relation] = []
 
-        lg.info("2. RE (REBEL + NER filter)")
-        relations = self.relation_extractor.extract_blocks(blocks)
+        for sentence_id, sentence in enumerate(sentences):
+            entities = self.ner.predict(sentence, sentence_id=sentence_id)
+            if not entities:
+                continue
 
-        lg.info("3. Post-processing (normalization + dedup)")
-        relations = self._postprocess_relations(relations)
+            all_entities.extend(entities)
 
-        return NLPResult(
-            entities=[],
-            relations=relations,
-        )
+            lg.debug("3. SciBERT relation extraction")
+            relations = self.relation_extractor.predict(sentence, entities)
+            all_relations.extend(relations)
 
-    def _postprocess_relations(self, relations):
-        dedup = set()
-        cleaned = []
+        return NLPResult(entities=all_entities, relations=all_relations)
 
-        for sent in relations:
-            new_relations = []
-
-            for r in sent.relations:
-                subj = self.resolver.register(r.subject)
-                obj = self.resolver.register(r.target)
-
-                key = (subj, r.relation, obj)
-
-                if key in dedup:
+    def _collect_sentences(self, doc: DocumentIR) -> list[str]:
+        sentences: list[str] = []
+        for section in doc.sections:
+            for block in section.blocks:
+                if block.type != "text" or not block.text:
                     continue
-
-                dedup.add(key)
-
-                r.subject = subj
-                r.target = obj
-
-                new_relations.append(r)
-
-            sent.relations = new_relations
-            cleaned.append(sent)
-
-        return cleaned
+                for sentence in block.text.split("."):
+                    candidate = sentence.strip()
+                    if candidate:
+                        sentences.append(candidate + ".")
+        return sentences

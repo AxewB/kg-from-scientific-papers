@@ -2,8 +2,6 @@ import logging
 import sys
 from pathlib import Path
 
-import spacy
-
 # Allow running the project as `python main.py` without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
@@ -12,11 +10,11 @@ from db.neo4j_writer import Neo4jGraphWriter
 from downloader.arxiv_downloader import ArxivDownloader
 from helpers import logger
 from helpers.paths import paths
-from ner.ner_extractor import NERExtractor
 from pipeline.graph_sink import Neo4jSink
+from pipeline.ner.predictor import SciBERTNER
 from pipeline.nlp_pipeline import NLPPipeline
+from pipeline.relation_extraction.predictor import SciBERTRE
 from pipeline.workflow import Workflow
-from relation_extraction.relation_extractor import RelationExtractor
 
 # Добавить передаваемые параметры
 # Добавить проверку параметров
@@ -32,23 +30,23 @@ def main():
     downloader = ArxivDownloader(
         categories=[
             "cs.AI",
-            "cs.AR",
-            "cs.CC",
+            # "cs.AR",
+            # "cs.CC",
             # "math.SG",
             # "math.SP",
             # "q-fin.CP",
             # "q-fin.EC",
             # "q-fin.GN",
         ],
-        num_each=20,
+        num_each=2,
     )
 
-    lg.info("Initializing NER and RE extractors...")
-    ner = NERExtractor()
-    re = RelationExtractor(ner)
+    lg.info("Initializing SciBERT NER and RE extractors...")
+    ner = SciBERTNER()
+    re = SciBERTRE()
 
     lg.info("Configuring NLP pipeline...")
-    pipeline = NLPPipeline(re)
+    pipeline = NLPPipeline(ner, re)
 
     lg.info("Setting up Neo4j configuration...")
     db = Neo4jGraphWriter(
