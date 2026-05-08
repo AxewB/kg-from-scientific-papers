@@ -1,5 +1,5 @@
 # my ignore list
-.cache
+.cache*
 .log
 temp.md
 

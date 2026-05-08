@@ -32,15 +32,15 @@ def main():
     downloader = ArxivDownloader(
         categories=[
             "cs.AI",
-            # "cs.AR",
-            # "cs.CC",
+            "cs.AR",
+            "cs.CC",
             # "math.SG",
             # "math.SP",
             # "q-fin.CP",
             # "q-fin.EC",
             # "q-fin.GN",
         ],
-        num_each=1,
+        num_each=20,
     )
 
     lg.info("Initializing NER and RE extractors...")

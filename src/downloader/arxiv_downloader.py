@@ -1,6 +1,7 @@
 # arxiv lib docs:
 # https://lukasschwab.me/arxiv.py/arxiv.html
 import logging
+from socket import timeout
 import time
 from pathlib import Path
 from time import sleep
@@ -42,7 +43,7 @@ class ArxivDownloader(DownloaderBase):
 
     @override
     def download(self) -> list[Paper]:
-        client = Client()
+        client = Client(delay_seconds=3, num_retries=3)
         papers: list[Paper] = []
 
         for category_code in self.categories:

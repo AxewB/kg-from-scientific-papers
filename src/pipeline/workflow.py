@@ -1,6 +1,7 @@
 import json
 import logging
 from pathlib import Path
+import time
 
 from data_extraction.grobid import GrobidClient
 from domain.ir import DocumentIR
@@ -34,7 +35,7 @@ class Workflow:
         self.analyzer: KGAnalyzer = KGAnalyzer()
 
     def run(self):
-        papers: list[Paper] = self.downloader.get_local_papers()
+        papers: list[Paper] = self.downloader.download()
 
         if not self.grobid.is_alive():
             raise RuntimeError("Grobid is offline")
@@ -55,22 +56,30 @@ class Workflow:
                     stop()
 
                 # --- NLP ---
-                stop = self.metrics.time_stage(paper_metrics, "nlp")
+                stop = self.metrics.time_stage(paper_metrics, "nlp_wall")
                 try:
-                    doc_ir, result = self._step_nlp(state)
+                    doc_ir, result, nlp_time, from_cache = self._step_nlp(state)
                 finally:
                     stop()
+
+                # сохраняем "реальную" стоимость NLP
+                paper_metrics.stage_time["nlp"] = nlp_time
+                paper_metrics.extra["nlp_from_cache"] = from_cache
+                paper_metrics.extra["nlp_time"] = nlp_time
 
                 # --- ANALYSIS ---
                 analysis = self.analyzer.analyze(result)
 
                 paper_metrics.sentences = len(result.relations)
                 paper_metrics.relations = analysis["relations"]
-                paper_metrics.entities = analysis["unique_entities"]
+                paper_metrics.entities = analysis["entities"]
 
-                # доп. признаки
+                # дополнительные метрики
                 paper_metrics.extra.update(analysis)
-                paper_metrics.extra["text_length"] = len(doc_ir.raw_text or "")
+
+                text = doc_ir.raw_text or ""
+                paper_metrics.extra["text_length_chars"] = len(text)
+                paper_metrics.extra["text_length_tokens_est"] = len(text.split())
 
                 # --- NEO4J ---
                 stop = self.metrics.time_stage(paper_metrics, "neo4j")
@@ -104,25 +113,43 @@ class Workflow:
 
         state.tei.write_text(tei_xml, encoding="utf-8")
 
-    def _step_nlp(self, state: PaperState) -> tuple[DocumentIR, NLPResult]:
+    def _step_nlp(self, state: PaperState) -> tuple[DocumentIR, NLPResult, float, bool]:
         lg.info("Doing NLP step...")
 
         tei_text = state.tei.read_text(encoding="utf-8")
         parser = TEIParser.from_xml(tei_text)
         doc_ir = parser.parse(doc_id=state.dir.name)
 
+        # --- CACHE ---
         if state.nlp.exists():
-            return doc_ir, self._load_nlp(state)
+            raw = json.loads(state.nlp.read_text(encoding="utf-8"))
+
+            result = NLPResult.model_validate(raw["data"])
+            nlp_time = raw["meta"]["nlp_time"]
+
+            return doc_ir, result, nlp_time, True
+
+        # --- REAL RUN ---
+        start = time.perf_counter()
 
         lg.info("Starting NLP processing...")
         result = self.pipeline.process(doc_ir)
 
+        nlp_time = time.perf_counter() - start
+
+        payload = {
+            "meta": {
+                "nlp_time": nlp_time,
+            },
+            "data": result.model_dump(),
+        }
+
         state.nlp.write_text(
-            json.dumps(result.model_dump(), ensure_ascii=False, indent=2),
+            json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
-        return doc_ir, result
+        return doc_ir, result, nlp_time, False
 
     def _step_neo4j(self, paper: Paper, doc_ir: DocumentIR, result: NLPResult) -> None:
         lg.info("Doing Neo4j step...")
