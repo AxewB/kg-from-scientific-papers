@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,8 +14,11 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from tqdm import tqdm
 
 from datasets.relation_dataset_builder import build_relation_dataset
+
+lg = logging.getLogger(__name__)
 
 
 @dataclass
@@ -29,7 +34,7 @@ class RETrainingConfig:
 class REDataset(Dataset):
     def __init__(self, rows: list[dict[str, str]], tokenizer, label2id: dict[str, int], max_length: int) -> None:
         self.samples: list[dict[str, list[int] | int]] = []
-        for row in rows:
+        for row in tqdm(rows, desc="Building RE samples", unit="pair"):
             enc = tokenizer(
                 row["text"],
                 truncation=True,
@@ -55,16 +60,20 @@ class SciBERTRETrainer:
         self.config = config
 
     def train(self, train_path: str | Path, dev_path: str | Path) -> None:
+        lg.info("Loading SciERC RE train/dev splits and building pair dataset...")
         train_rows = build_relation_dataset(train_path, include_none=True)
         dev_rows = build_relation_dataset(dev_path, include_none=True)
+        lg.info("Built RE pairs: train=%d dev=%d", len(train_rows), len(dev_rows))
 
         labels = sorted({row["label"] for row in train_rows + dev_rows})
         id2label = {i: label for i, label in enumerate(labels)}
         label2id = {label: idx for idx, label in id2label.items()}
 
         tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
+        lg.info("Tokenizing RE datasets...")
         train_dataset = REDataset(train_rows, tokenizer, label2id, self.config.max_length)
         dev_dataset = REDataset(dev_rows, tokenizer, label2id, self.config.max_length)
+        lg.info("Prepared RE samples: train=%d dev=%d", len(train_dataset), len(dev_dataset))
 
         model = AutoModelForSequenceClassification.from_pretrained(
             self.config.model_name,
@@ -105,20 +114,31 @@ class SciBERTRETrainer:
             )
             return {"precision": precision, "recall": recall, "f1": f1}
 
-        training_args = TrainingArguments(
-            output_dir=self.config.output_dir,
-            learning_rate=self.config.learning_rate,
-            per_device_train_batch_size=self.config.batch_size,
-            per_device_eval_batch_size=self.config.batch_size,
-            num_train_epochs=self.config.epochs,
-            evaluation_strategy="epoch",
-            save_strategy="epoch",
-            logging_steps=50,
-            load_best_model_at_end=True,
-            metric_for_best_model="f1",
-            greater_is_better=True,
-            report_to=[],
-        )
+        args_dict = {
+            "output_dir": self.config.output_dir,
+            "learning_rate": self.config.learning_rate,
+            "per_device_train_batch_size": self.config.batch_size,
+            "per_device_eval_batch_size": self.config.batch_size,
+            "num_train_epochs": self.config.epochs,
+            "save_strategy": "epoch",
+            "logging_steps": 10,
+            "disable_tqdm": False,
+            "load_best_model_at_end": True,
+            "metric_for_best_model": "f1",
+            "greater_is_better": True,
+            "report_to": [],
+        }
+
+        training_sig = inspect.signature(TrainingArguments.__init__)
+        if "evaluation_strategy" in training_sig.parameters:
+            args_dict["evaluation_strategy"] = "epoch"
+        elif "eval_strategy" in training_sig.parameters:
+            args_dict["eval_strategy"] = "epoch"
+
+        if "logging_strategy" in training_sig.parameters:
+            args_dict["logging_strategy"] = "steps"
+
+        training_args = TrainingArguments(**args_dict)
 
         trainer = Trainer(
             model=model,
@@ -130,7 +150,9 @@ class SciBERTRETrainer:
             compute_metrics=compute_metrics,
         )
 
+        lg.info("Starting RE training...")
         trainer.train()
+        lg.info("Saving RE checkpoint to %s", self.config.output_dir)
         trainer.save_model(self.config.output_dir)
         tokenizer.save_pretrained(self.config.output_dir)
 

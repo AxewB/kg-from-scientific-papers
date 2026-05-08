@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +14,9 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from tqdm import tqdm
+
+lg = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,7 +49,7 @@ class NERDataset(Dataset):
         max_length: int,
     ) -> None:
         self.samples: list[dict[str, list[int]]] = []
-        for row in rows:
+        for row in tqdm(rows, desc="Building NER samples", unit="doc"):
             for sentence_tokens, sentence_ner in zip(row["sentences"], row["ner"]):
                 tags = _scierc_to_bio(sentence_ner, sentence_tokens)
                 enc = tokenizer(
@@ -87,12 +92,14 @@ class SciBERTNERTrainer:
         self.config = config
 
     def train(self, train_path: str | Path, dev_path: str | Path) -> None:
+        lg.info("Loading SciERC NER train/dev splits...")
         train_json = [line for line in Path(train_path).read_text(encoding="utf-8").splitlines() if line.strip()]
         dev_json = [line for line in Path(dev_path).read_text(encoding="utf-8").splitlines() if line.strip()]
         import json
 
         train_records = [json.loads(line) for line in train_json]
         dev_records = [json.loads(line) for line in dev_json]
+        lg.info("Loaded records: train=%d dev=%d", len(train_records), len(dev_records))
 
         label_set = {"O"}
         for row in train_records + dev_records:
@@ -105,12 +112,14 @@ class SciBERTNERTrainer:
         label2id = {label: idx for idx, label in id2label.items()}
 
         tokenizer = AutoTokenizer.from_pretrained(self.config.model_name)
+        lg.info("Tokenizing NER datasets...")
         train_dataset = NERDataset(
             train_records, tokenizer, label2id, self.config.max_length
         )
         dev_dataset = NERDataset(
             dev_records, tokenizer, label2id, self.config.max_length
         )
+        lg.info("Prepared NER samples: train=%d dev=%d", len(train_dataset), len(dev_dataset))
 
         model = AutoModelForTokenClassification.from_pretrained(
             self.config.model_name,
@@ -154,20 +163,31 @@ class SciBERTNERTrainer:
             )
             return {"precision": precision, "recall": recall, "f1": f1}
 
-        training_args = TrainingArguments(
-            output_dir=self.config.output_dir,
-            learning_rate=self.config.learning_rate,
-            per_device_train_batch_size=self.config.batch_size,
-            per_device_eval_batch_size=self.config.batch_size,
-            num_train_epochs=self.config.epochs,
-            evaluation_strategy="epoch",
-            save_strategy="epoch",
-            logging_steps=50,
-            load_best_model_at_end=True,
-            metric_for_best_model="f1",
-            greater_is_better=True,
-            report_to=[],
-        )
+        args_dict = {
+            "output_dir": self.config.output_dir,
+            "learning_rate": self.config.learning_rate,
+            "per_device_train_batch_size": self.config.batch_size,
+            "per_device_eval_batch_size": self.config.batch_size,
+            "num_train_epochs": self.config.epochs,
+            "save_strategy": "epoch",
+            "logging_steps": 10,
+            "disable_tqdm": False,
+            "load_best_model_at_end": True,
+            "metric_for_best_model": "f1",
+            "greater_is_better": True,
+            "report_to": [],
+        }
+
+        training_sig = inspect.signature(TrainingArguments.__init__)
+        if "evaluation_strategy" in training_sig.parameters:
+            args_dict["evaluation_strategy"] = "epoch"
+        elif "eval_strategy" in training_sig.parameters:
+            args_dict["eval_strategy"] = "epoch"
+
+        if "logging_strategy" in training_sig.parameters:
+            args_dict["logging_strategy"] = "steps"
+
+        training_args = TrainingArguments(**args_dict)
 
         trainer = Trainer(
             model=model,
@@ -179,7 +199,9 @@ class SciBERTNERTrainer:
             compute_metrics=compute_metrics,
         )
 
+        lg.info("Starting NER training...")
         trainer.train()
+        lg.info("Saving NER checkpoint to %s", self.config.output_dir)
         trainer.save_model(self.config.output_dir)
         tokenizer.save_pretrained(self.config.output_dir)
 

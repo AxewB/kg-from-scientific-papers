@@ -2,6 +2,7 @@
 .cache*
 .log
 temp.md
+artifacts
 
 ###
 ### DEFAULT IGNORE LIST

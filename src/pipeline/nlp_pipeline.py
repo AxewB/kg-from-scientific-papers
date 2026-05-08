@@ -1,5 +1,7 @@
 import logging
 
+from tqdm import tqdm
+
 from domain.ir import DocumentIR
 from domain.entity import Entity
 from domain.nlp_result import NLPResult
@@ -22,12 +24,18 @@ class NLPPipeline:
     def process(self, doc: DocumentIR) -> NLPResult:
         lg.info("1. IR traversal + sentence segmentation")
         sentences = self._collect_sentences(doc)
+        lg.info("Collected %d sentences for NLP processing", len(sentences))
 
         lg.info("2. SciBERT NER")
         all_entities: list[Entity] = []
         all_relations: list[Relation] = []
 
-        for sentence_id, sentence in enumerate(sentences):
+        for sentence_id, sentence in tqdm(
+            enumerate(sentences),
+            total=len(sentences),
+            desc="NLP sentence processing",
+            unit="sent",
+        ):
             entities = self.ner.predict(sentence, sentence_id=sentence_id)
             if not entities:
                 continue

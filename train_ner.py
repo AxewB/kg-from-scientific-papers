@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -22,7 +23,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     args = parse_args()
+    logging.info("Starting NER training CLI...")
+    logging.info("Train: %s | Dev: %s | Output: %s", args.train, args.dev, args.output_dir)
     config = NERTrainingConfig(
         model_name=args.model_name,
         output_dir=args.output_dir,
@@ -33,6 +40,7 @@ def main() -> None:
     )
     trainer = SciBERTNERTrainer(config)
     trainer.train(args.train, args.dev)
+    logging.info("NER training finished.")
 
 
 if __name__ == "__main__":

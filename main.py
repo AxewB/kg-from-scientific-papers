@@ -38,7 +38,7 @@ def main():
             # "q-fin.EC",
             # "q-fin.GN",
         ],
-        num_each=2,
+        num_each=6,
     )
 
     lg.info("Initializing SciBERT NER and RE extractors...")
