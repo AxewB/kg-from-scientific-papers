@@ -54,7 +54,9 @@ class Neo4jGraphWriter:
         lg.info("Writing mentions")
         query = """
         UNWIND $rows AS row
+        MERGE (p:Paper {id: row.paper_id})
         MERGE (s:Sentence {id: row.sentence_id})
+        MERGE (p)-[:HAS_SENTENCE]->(s)
         MATCH (e:Entity {id: row.entity_id})
         MERGE (s)-[:MENTIONS]->(e)
         """

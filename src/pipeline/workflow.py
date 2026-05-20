@@ -49,7 +49,8 @@ class Workflow:
         docker_neo4j = os.environ.get("METRICS_DOCKER_NEO4J", "").strip() or None
 
         lg.info(
-            "Resource sampling: grobid=%s, neo4j=%s (nlp_wall = local Python + VRAM)",
+            "Resource sampling: grobid=%s, neo4j=%s; nlp_wall = local Python "
+            "+ PyTorch VRAM + GPU util (nvidia-smi/NVML if available)",
             f"docker:{docker_grobid}" if docker_grobid else "local process",
             f"docker:{docker_neo4j}" if docker_neo4j else "local process",
         )

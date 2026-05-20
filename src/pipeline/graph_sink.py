@@ -28,6 +28,7 @@ class Neo4jSink:
             entities[ent_id] = {"text": entity.text, "type": entity.label.value}
             mentions.append(
                 {
+                    "paper_id": paper.id,
                     "sentence_id": f"{paper.id}::s{entity.sentence_id}",
                     "entity_id": ent_id,
                 }

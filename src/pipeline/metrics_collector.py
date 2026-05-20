@@ -13,6 +13,7 @@ from typing import Callable
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import ticker
 
 from helpers.paths import paths
 
@@ -28,6 +29,120 @@ except Exception:  # pragma: no cover - optional runtime dependency fallback
 
 
 lg = logging.getLogger(__name__)
+
+_PLOT_FONT_SIZE = 32
+_PLOT_TITLE_SIZE = 36
+_PLOT_TICK_SIZE = 20
+_PLOT_LEGEND_SIZE = 24
+_FIG_SCALE = 1.5
+_PLOT_DPI = 200
+
+
+def _apply_plot_style() -> None:
+    plt.rcParams.update(
+        {
+            "font.size": _PLOT_FONT_SIZE,
+            "axes.titlesize": _PLOT_TITLE_SIZE,
+            "axes.labelsize": _PLOT_FONT_SIZE,
+            "xtick.labelsize": _PLOT_TICK_SIZE,
+            "ytick.labelsize": _PLOT_TICK_SIZE,
+            "legend.fontsize": _PLOT_LEGEND_SIZE,
+            "figure.titlesize": _PLOT_TITLE_SIZE,
+        }
+    )
+
+
+def _figsize(width: float, height: float) -> tuple[float, float]:
+    return width * _FIG_SCALE, height * _FIG_SCALE
+
+
+def _plain_value_axis(ax, axis: str = "y") -> None:
+    """Show full numeric tick labels (no +1e3 offset when values cluster)."""
+    axis_obj = getattr(ax, f"{axis}axis")
+    fmt = ticker.ScalarFormatter(useOffset=False)
+    fmt.set_scientific(False)
+    axis_obj.set_major_formatter(fmt)
+
+
+def _normalize_cpu_pct(raw_pct: float) -> float:
+    """
+    Map psutil/docker raw CPU (sum over cores, can be >100%) to share of the host.
+
+    ``Process.cpu_percent`` reports utilization as if each logical CPU were 100%;
+    dividing by ``cpu_count(logical=True)`` yields 0–100% of total machine capacity.
+    """
+    if psutil is None:
+        return min(100.0, max(0.0, raw_pct))
+    n_cpus = psutil.cpu_count(logical=True) or 1
+    return min(100.0, max(0.0, raw_pct / n_cpus))
+
+
+def _cpu_series_host_pct(series: pd.Series) -> pd.Series:
+    """
+    CPU for plots as 0–100% of the machine.
+
+    Older metrics.jsonl stores per-core sums (>100); newer runs are already normalized.
+    """
+    s = series.astype(float)
+    if float(s.max()) > 100.0:
+        return s.map(_normalize_cpu_pct)
+    return s
+
+
+_nvml_ready = False
+_nvml_handle = None
+
+
+def _sample_gpu(device_index: int = 0) -> dict[str, float] | None:
+    """
+    GPU utilization (%) and total VRAM used on the device (MiB, all processes).
+
+    Uses NVML (package ``nvidia-ml-py`` / ``pynvml``) when available, else ``nvidia-smi``.
+    """
+    global _nvml_ready, _nvml_handle
+
+    try:
+        import pynvml
+
+        if not _nvml_ready:
+            pynvml.nvmlInit()
+            _nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(device_index)
+            _nvml_ready = True
+        util = pynvml.nvmlDeviceGetUtilizationRates(_nvml_handle)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(_nvml_handle)
+        return {
+            "gpu_util_pct": float(util.gpu),
+            "gpu_mem_used_mb": mem.used / (1024 * 1024),
+            "gpu_mem_total_mb": mem.total / (1024 * 1024),
+        }
+    except Exception:
+        pass
+
+    try:
+        proc = subprocess.run(
+            [
+                "nvidia-smi",
+                f"--id={device_index}",
+                "--query-gpu=utilization.gpu,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return None
+        parts = [p.strip() for p in proc.stdout.strip().split(",")]
+        if len(parts) < 3:
+            return None
+        return {
+            "gpu_util_pct": float(parts[0]),
+            "gpu_mem_used_mb": float(parts[1]),
+            "gpu_mem_total_mb": float(parts[2]),
+        }
+    except Exception:
+        return None
 
 
 def _parse_docker_mem_usage_mib(mem_usage_field: str) -> float:
@@ -195,6 +310,7 @@ class PaperMetrics:
 
 class MetricsCollector:
     def __init__(self):
+        _apply_plot_style()
         self.papers: list[PaperMetrics] = []
 
         self.run_dir = paths.run_dir
@@ -209,6 +325,7 @@ class MetricsCollector:
         run = Path(run_dir).resolve()
         fig = run / "figures"
         fig.mkdir(parents=True, exist_ok=True)
+        _apply_plot_style()
         inst = cls.__new__(cls)
         inst.papers = []
         inst.run_dir = run
@@ -242,12 +359,19 @@ class MetricsCollector:
         """
         Track resource usage for a stage into `paper.extra`.
 
-        - Default: local Python process via psutil (+ PyTorch VRAM when CUDA is used).
-        - If `docker_container` is set (e.g. GROBID / Neo4j in Docker): poll that
-          container with `docker stats` instead — the client process is not the server.
+        Local process (default):
+        - RAM: RSS of the Python workflow process (psutil), not system-wide.
+        - CPU: ``psutil.Process.cpu_percent`` normalized by logical CPU count
+          (0–100% of host; idle I/O stages stay near 0%).
+        - VRAM (``vram_mb_*``): PyTorch CUDA allocator on the default GPU only.
+        - GPU (``gpu_util_pct_*``, ``gpu_mem_mb_*``): device-wide via NVML /
+          ``nvidia-smi`` (utilization % and memory used by all processes).
 
-        Container names are typically passed from env in `Workflow` (see
-        METRICS_DOCKER_GROBID / METRICS_DOCKER_NEO4J).
+        Docker (``docker_container`` set):
+        - CPU/RAM of the container via ``docker stats`` (GROBID/Neo4j server load).
+        - Set METRICS_DOCKER_GROBID / METRICS_DOCKER_NEO4J in Workflow.
+
+        Container names are typically passed from env in ``Workflow``.
         """
         docker_container = (docker_container or "").strip() or None
         if docker_container:
@@ -260,11 +384,14 @@ class MetricsCollector:
         process = psutil.Process()
         stop_event = threading.Event()
         cpu_samples: list[float] = []
+        gpu_util_samples: list[float] = []
+        gpu_mem_samples: list[float] = []
 
         ram_start_mb = process.memory_info().rss / (1024 * 1024)
         ram_peak_mb = ram_start_mb
 
         cuda_available = bool(torch is not None and torch.cuda.is_available())
+        gpu_available = _sample_gpu() is not None
         vram_start_mb = 0.0
         vram_peak_mb = 0.0
 
@@ -279,7 +406,9 @@ class MetricsCollector:
             nonlocal ram_peak_mb, vram_peak_mb
             while not stop_event.is_set():
                 try:
-                    cpu_samples.append(process.cpu_percent(None))
+                    cpu_samples.append(
+                        _normalize_cpu_pct(process.cpu_percent(None))
+                    )
                     ram_now_mb = process.memory_info().rss / (1024 * 1024)
                     ram_peak_mb = max(ram_peak_mb, ram_now_mb)
 
@@ -288,6 +417,12 @@ class MetricsCollector:
                             vram_peak_mb,
                             float(torch.cuda.max_memory_allocated() / (1024 * 1024)),
                         )
+
+                    if gpu_available:
+                        snap = _sample_gpu()
+                        if snap:
+                            gpu_util_samples.append(snap["gpu_util_pct"])
+                            gpu_mem_samples.append(snap["gpu_mem_used_mb"])
                 except Exception:
                     # Keep monitoring best-effort and never break workflow.
                     pass
@@ -320,6 +455,14 @@ class MetricsCollector:
                 paper.extra[f"resource_{stage}_vram_mb_end"] = vram_end_mb
                 paper.extra[f"resource_{stage}_vram_mb_peak"] = vram_peak
 
+            if gpu_available and gpu_util_samples:
+                gpu_util_avg = sum(gpu_util_samples) / len(gpu_util_samples)
+                paper.extra[f"resource_{stage}_gpu_util_pct_avg"] = gpu_util_avg
+                paper.extra[f"resource_{stage}_gpu_util_pct_peak"] = max(gpu_util_samples)
+                paper.extra[f"resource_{stage}_gpu_mem_mb_peak"] = (
+                    max(gpu_mem_samples) if gpu_mem_samples else 0.0
+                )
+
         return stop
 
     def _monitor_docker_container(
@@ -343,7 +486,7 @@ class MetricsCollector:
             while not stop_event.is_set():
                 snap = _docker_stats_snapshot(container)
                 if snap:
-                    cpu_samples.append(snap["cpu_pct"])
+                    cpu_samples.append(_normalize_cpu_pct(snap["cpu_pct"]))
                     mem_pct_samples.append(snap["mem_pct"])
                     mem_mib_samples.append(snap["mem_usage_mib"])
                     mem_limit_mib_samples.append(snap.get("mem_limit_mib", 0.0))
@@ -417,6 +560,9 @@ class MetricsCollector:
         return summary
 
     # plotting
+    def _save_figure(self, path: Path) -> None:
+        plt.savefig(path, dpi=_PLOT_DPI, bbox_inches="tight")
+
     def plot_stage_times(self):
         df = self._load_df()
 
@@ -430,42 +576,46 @@ class MetricsCollector:
         }
         means = df[stage_cols].mean().sort_values()
         means.index = [_stage_ru.get(str(i), str(i)) for i in means.index]
+        plt.figure(figsize=_figsize(8, 5.5))
         means.plot(kind="bar")
 
         plt.title("Среднее время этапов")
-        plt.ylabel("с")
+        plt.ylabel("Время, с")
         plt.xlabel("Этап")
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "stage_times.png")
+        self._save_figure(self.figures_dir / "stage_times.png")
         plt.close()
 
     def plot_distributions(self):
         df = self._load_df()
 
+        plt.figure(figsize=_figsize(8, 5.5))
         df["relations"].plot(kind="hist", bins=30)
         plt.title("Распределение числа связей")
         plt.xlabel("Число связей")
         plt.ylabel("Частота")
-        plt.savefig(self.figures_dir / "relations_hist.png")
+        self._save_figure(self.figures_dir / "relations_hist.png")
         plt.close()
 
+        plt.figure(figsize=_figsize(8, 5.5))
         df["entities"].plot(kind="hist", bins=30)
         plt.title("Распределение числа сущностей")
         plt.xlabel("Число сущностей")
         plt.ylabel("Частота")
-        plt.savefig(self.figures_dir / "entities_hist.png")
+        self._save_figure(self.figures_dir / "entities_hist.png")
         plt.close()
 
     def plot_complexity(self):
         df = self._load_df()
 
-        plt.scatter(df["sentences"], df["relations"])
+        plt.figure(figsize=_figsize(8, 5.5))
+        plt.scatter(df["sentences"], df["relations"], s=80, alpha=0.85)
 
         plt.title("Предложения и связи")
         plt.xlabel("Число предложений")
         plt.ylabel("Число связей")
 
-        plt.savefig(self.figures_dir / "complexity.png")
+        self._save_figure(self.figures_dir / "complexity.png")
         plt.close()
 
     def plot_stage_times_per_paper(self) -> None:
@@ -482,9 +632,10 @@ class MetricsCollector:
             "time_neo4j": "Neo4j",
         }
         plot_df = df.set_index("paper_id")[cols].rename(columns=rename)
+        w, h = _figsize(max(8.0, 0.45 * len(df)), 5)
         ax = plot_df.plot(
             kind="bar",
-            figsize=(max(8.0, 0.45 * len(df)), 5),
+            figsize=(w, h),
             rot=25,
         )
         ax.set_title("Время этапов по статьям")
@@ -492,11 +643,11 @@ class MetricsCollector:
         ax.set_xlabel("")
         ax.legend(title="Этап")
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "stage_times_per_paper.png")
+        self._save_figure(self.figures_dir / "stage_times_per_paper.png")
         plt.close()
 
     def plot_local_resources_per_paper(self) -> None:
-        """RSS / VRAM / CPU (local Python process) peaks & NLP VRAM per paper."""
+        """RSS / CPU / GPU util / GPU & PyTorch memory per paper."""
         df = self._load_df()
         if df.empty:
             return
@@ -510,7 +661,6 @@ class MetricsCollector:
             )
             if c in df.columns
         ]
-        vram_col = "extra_resource_nlp_wall_vram_mb_peak"
         cpu_cols = [
             c
             for c in (
@@ -520,49 +670,96 @@ class MetricsCollector:
             )
             if c in df.columns
         ]
+        gpu_util_cols = [
+            c
+            for c in (
+                "extra_resource_grobid_gpu_util_pct_avg",
+                "extra_resource_nlp_wall_gpu_util_pct_avg",
+                "extra_resource_neo4j_gpu_util_pct_avg",
+            )
+            if c in df.columns
+        ]
+        gpu_mem_cols = [
+            c
+            for c in (
+                "extra_resource_grobid_gpu_mem_mb_peak",
+                "extra_resource_nlp_wall_gpu_mem_mb_peak",
+                "extra_resource_neo4j_gpu_mem_mb_peak",
+            )
+            if c in df.columns
+        ]
+        vram_col = "extra_resource_nlp_wall_vram_mb_peak"
 
-        n_plots = sum([bool(ram_cols), vram_col in df.columns, bool(cpu_cols)])
+        n_plots = sum(
+            [
+                bool(ram_cols),
+                bool(cpu_cols),
+                bool(gpu_util_cols),
+                bool(gpu_mem_cols),
+                vram_col in df.columns,
+            ]
+        )
         if n_plots == 0:
             return
 
-        fig, axes = plt.subplots(1, n_plots, figsize=(5 * n_plots, 4.5))
+        fig, axes = plt.subplots(1, n_plots, figsize=_figsize(4 * n_plots, 4))
         if n_plots == 1:
             axes = [axes]
 
         i = 0
-        ram_labels = {
-            "extra_resource_grobid_ram_mb_peak": "grobid",
-            "extra_resource_nlp_wall_ram_mb_peak": "nlp_wall",
-            "extra_resource_neo4j_ram_mb_peak": "neo4j",
+        stage_labels = {
+            "grobid": "grobid",
+            "nlp_wall": "nlp_wall",
+            "neo4j": "neo4j",
         }
+
+        def _legend_labels(cols: list[str]) -> list[str]:
+            labels = []
+            for c in cols:
+                for key, name in stage_labels.items():
+                    if key in c:
+                        labels.append(name)
+                        break
+                else:
+                    labels.append(c.replace("extra_resource_", "")[:24])
+            return labels
+
         if ram_cols:
             df.set_index("paper_id")[ram_cols].plot(kind="bar", ax=axes[i], rot=25)
-            axes[i].set_title("Пик RSS процесса (МиБ)")
-            axes[i].set_ylabel("МиБ")
-            axes[i].legend(labels=[ram_labels[c] for c in ram_cols], fontsize=8)
+            axes[i].set_title("Пик RSS процесса (МБ)")
+            axes[i].set_ylabel("МБ")
+            axes[i].legend(labels=_legend_labels(ram_cols))
+            i += 1
+
+        if cpu_cols:
+            df.set_index("paper_id")[cpu_cols].plot(kind="bar", ax=axes[i], rot=25)
+            axes[i].set_title("CPU, % от всех ядер (среднее)")
+            axes[i].set_ylabel("%")
+            axes[i].legend(labels=_legend_labels(cpu_cols))
+            i += 1
+
+        if gpu_util_cols:
+            df.set_index("paper_id")[gpu_util_cols].plot(kind="bar", ax=axes[i], rot=25)
+            axes[i].set_title("Загрузка GPU (среднее)")
+            axes[i].set_ylabel("%")
+            axes[i].legend(labels=_legend_labels(gpu_util_cols))
+            i += 1
+
+        if gpu_mem_cols:
+            df.set_index("paper_id")[gpu_mem_cols].plot(kind="bar", ax=axes[i], rot=25)
+            axes[i].set_title("Память GPU, пик (драйвер, МБ)")
+            axes[i].set_ylabel("МБ")
+            axes[i].legend(labels=_legend_labels(gpu_mem_cols))
             i += 1
 
         if vram_col in df.columns:
             df.set_index("paper_id")[[vram_col]].plot(kind="bar", ax=axes[i], rot=25, legend=False)
-            axes[i].set_title("Пик VRAM PyTorch на этапе NLP (МиБ)")
-            axes[i].set_ylabel("МиБ")
+            axes[i].set_title("Память PyTorch CUDA, пик на NLP (МБ)")
+            axes[i].set_ylabel("МБ")
             i += 1
 
-        cpu_labels = {
-            "extra_resource_grobid_cpu_pct_avg": "grobid",
-            "extra_resource_nlp_wall_cpu_pct_avg": "nlp_wall",
-            "extra_resource_neo4j_cpu_pct_avg": "neo4j",
-        }
-        if cpu_cols:
-            df.set_index("paper_id")[cpu_cols].plot(kind="bar", ax=axes[i], rot=25)
-            axes[i].set_title(
-                "Средняя загрузка CPU, % (на многоядерных системах может быть >100)"
-            )
-            axes[i].set_ylabel("%")
-            axes[i].legend(labels=[cpu_labels[c] for c in cpu_cols], fontsize=8)
-
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "local_resources_per_paper.png")
+        self._save_figure(self.figures_dir / "local_resources_per_paper.png")
         plt.close()
 
     def plot_nlp_vs_text_size(self) -> None:
@@ -574,13 +771,13 @@ class MetricsCollector:
         if tok not in df.columns:
             return
 
-        plt.figure(figsize=(7, 5))
-        plt.scatter(df[tok], df["time_nlp"], s=60, alpha=0.85)
+        plt.figure(figsize=_figsize(7, 5))
+        plt.scatter(df[tok], df["time_nlp"], s=80, alpha=0.85)
         plt.xlabel("Длина текста")
         plt.ylabel("Время NLP (с)")
         plt.title("Время NLP и размер документа")
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "nlp_time_vs_text.png")
+        self._save_figure(self.figures_dir / "nlp_time_vs_text.png")
         plt.close()
 
     def plot_kg_derived_metrics(self) -> None:
@@ -598,7 +795,7 @@ class MetricsCollector:
         if not any(c in df.columns for c in needed):
             return
 
-        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        fig, axes = plt.subplots(2, 2, figsize=_figsize(10, 8))
 
         used = [[False, False], [False, False]]
 
@@ -650,7 +847,7 @@ class MetricsCollector:
             return
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "kg_derived_metrics.png")
+        self._save_figure(self.figures_dir / "kg_derived_metrics.png")
         plt.close()
 
     def plot_docker_resources_per_paper(self) -> None:
@@ -667,7 +864,7 @@ class MetricsCollector:
             return
 
         n = sum([bool(cpu_cols), bool(mem_cols)])
-        fig, axes = plt.subplots(1, n, figsize=(6 * n, 4.5))
+        fig, axes = plt.subplots(1, n, figsize=_figsize(6 * n, 4.5))
         if n == 1:
             axes = [axes]
 
@@ -681,35 +878,33 @@ class MetricsCollector:
             elif "nlp" in c:
                 stage = "NLP"
             if "cpu" in c:
-                return f"{stage}: CPU % (средн.)" if stage else col[:40]
+                return f"{stage}: CPU % (ср.)" if stage else col[:40]
             if "mem" in c or "mib" in c:
-                return f"{stage}: ОЗУ, пик (МиБ)" if stage else col[:40]
+                return f"{stage}: ОЗУ, пик (МБ)" if stage else col[:40]
             return col.replace("extra_resource_", "")[:40]
 
         ax_i = 0
         if cpu_cols:
             df.set_index("paper_id")[cpu_cols].plot(kind="bar", ax=axes[ax_i], rot=25)
-            axes[ax_i].set_title("Контейнер Docker: CPU, % (среднее за этап)")
+            axes[ax_i].set_title("Контейнер Docker: CPU, % от всех ядер (среднее)")
             axes[ax_i].set_ylabel("%")
             axes[ax_i].legend(
                 [_short_label(c) for c in cpu_cols],
-                fontsize=7,
                 loc="upper left",
             )
             ax_i += 1
 
         if mem_cols:
             df.set_index("paper_id")[mem_cols].plot(kind="bar", ax=axes[ax_i], rot=25)
-            axes[ax_i].set_title("Контейнер Docker: использование памяти, пик (МиБ)")
-            axes[ax_i].set_ylabel("МиБ")
+            axes[ax_i].set_title("Контейнер Docker: использование памяти, пик (МБ)")
+            axes[ax_i].set_ylabel("МБ")
             axes[ax_i].legend(
                 [_short_label(c) for c in mem_cols],
-                fontsize=7,
                 loc="upper left",
             )
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "docker_resources_per_paper.png")
+        self._save_figure(self.figures_dir / "docker_resources_per_paper.png")
         plt.close()
 
     def plot_resources_vs_paper_index(self) -> None:
@@ -739,10 +934,15 @@ class MetricsCollector:
             "extra_resource_nlp_wall_cpu_pct_avg",
             "extra_resource_neo4j_cpu_pct_avg",
         ]
-        vram_keys = [
-            "extra_resource_grobid_vram_mb_peak",
-            "extra_resource_nlp_wall_vram_mb_peak",
-            "extra_resource_neo4j_vram_mb_peak",
+        gpu_util_keys = [
+            "extra_resource_grobid_gpu_util_pct_avg",
+            "extra_resource_nlp_wall_gpu_util_pct_avg",
+            "extra_resource_neo4j_gpu_util_pct_avg",
+        ]
+        gpu_mem_keys = [
+            "extra_resource_grobid_gpu_mem_mb_peak",
+            "extra_resource_nlp_wall_gpu_mem_mb_peak",
+            "extra_resource_neo4j_gpu_mem_mb_peak",
         ]
 
         def _row_max(keys: list[str]) -> pd.Series | None:
@@ -753,57 +953,76 @@ class MetricsCollector:
 
         ram_y = _row_max(ram_keys)
         cpu_y = _row_max(cpu_keys)
-        vram_y = _row_max(vram_keys)
+        if cpu_y is not None:
+            cpu_y = _cpu_series_host_pct(cpu_y)
+        gpu_util_y = _row_max(gpu_util_keys)
+        gpu_mem_y = _row_max(gpu_mem_keys)
 
         panels: list[tuple[pd.Series, str, str]] = []
         if ram_y is not None:
             panels.append(
                 (
                     ram_y,
-                    "Пик RSS, МиБ",
-                    "ОЗУ — максимум по этапам (GROBID, NLP, Neo4j) на статью",
+                    "Потребление, МБ",
+                    "ОЗУ",
                 )
             )
         if cpu_y is not None:
             panels.append(
                 (
                     cpu_y,
-                    "CPU, % (макс. средних по этапам)",
-                    "CPU — максимум средней загрузки по этапам на статью",
+                    "CPU, % от всех ядер",
+                    "CPU",
                 )
             )
-        if vram_y is not None:
+        if gpu_util_y is not None:
             panels.append(
                 (
-                    vram_y,
-                    "Пик VRAM, МиБ",
-                    "VRAM GPU — максимум PyTorch по этапам на статью",
+                    gpu_util_y,
+                    "GPU, %",
+                    "Загрузка GPU",
+                )
+            )
+        if gpu_mem_y is not None:
+            panels.append(
+                (
+                    gpu_mem_y,
+                    "Память GPU, МБ",
+                    "Память GPU (драйвер)",
                 )
             )
 
         if not panels:
             return
 
-        fig, axes = plt.subplots(len(panels), 1, figsize=(11, 3.2 * len(panels)), sharex=True)
+        fig, axes = plt.subplots(
+            len(panels), 1, figsize=_figsize(6, 2.5 * len(panels)), sharex=True
+        )
         if len(panels) == 1:
             axes = np.array([axes])
 
         colors = ("C0", "C1", "C2")
         for ax, (y, ylabel, title), color in zip(axes, panels, colors):
-            ax.plot(x, y, marker="o", markersize=5, color=color)
+            ax.plot(x, y, marker="o", markersize=7, color=color)
             ax.set_ylabel(ylabel)
             ax.set_title(title)
             ax.grid(True, alpha=0.35)
+            _plain_value_axis(ax, "y")
 
-        axes[-1].set_xlabel("Индекс статьи (порядок в этом прогоне)")
-        if n <= 24:
-            axes[-1].set_xticks(x)
-            axes[-1].set_xticklabels(paper_labels, rotation=40, ha="right", fontsize=7)
-        else:
-            axes[-1].set_xticks(x)
+            y_min, y_max = float(y.min()), float(y.max())
+            spread = y_max - y_min
+            pad = max(spread * 0.15, y_max * 0.002, 1.0) if spread > 0 else max(y_max * 0.01, 5.0)
+            ax.set_ylim(y_min - pad, y_max + pad)
+
+        # axes[-1].set_xlabel("Индекс статьи (порядок в этом прогоне)")
+        # if n <= 24:
+        #     axes[-1].set_xticks(x)
+        #     axes[-1].set_xticklabels(paper_labels, rotation=40, ha="right")
+        # else:
+        #     axes[-1].set_xticks(x)
 
         plt.tight_layout()
-        plt.savefig(self.figures_dir / "resources_vs_paper_index.png")
+        self._save_figure(self.figures_dir / "resources_vs_paper_index.png")
         plt.close()
 
     def plot_all_metric_figures(self) -> None:
