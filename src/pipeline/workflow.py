@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 import time
 
@@ -35,12 +36,23 @@ class Workflow:
         self.analyzer: KGAnalyzer = KGAnalyzer()
 
     def run(self):
-        papers: list[Paper] = self.downloader.download()
+        # papers: list[Paper] = self.downloader.download()
+        papers: list[Paper] = self.downloader.get_local_papers()
 
         if not self.grobid.is_alive():
             raise RuntimeError("Grobid is offline")
 
         total_papers = len(papers)
+
+        # Docker resource sampling (optional): names must match `docker ps`.
+        docker_grobid = os.environ.get("METRICS_DOCKER_GROBID", "").strip() or None
+        docker_neo4j = os.environ.get("METRICS_DOCKER_NEO4J", "").strip() or None
+
+        lg.info(
+            "Resource sampling: grobid=%s, neo4j=%s (nlp_wall = local Python + VRAM)",
+            f"docker:{docker_grobid}" if docker_grobid else "local process",
+            f"docker:{docker_neo4j}" if docker_neo4j else "local process",
+        )
 
         for i, paper in enumerate(papers):
             lg.info(f"Processing paper {i + 1} out of {total_papers}")
@@ -50,16 +62,26 @@ class Workflow:
 
                 # --- GROBID ---
                 stop = self.metrics.time_stage(paper_metrics, "grobid")
+                stop_resources = self.metrics.monitor_stage_resources(
+                    paper_metrics,
+                    "grobid",
+                    docker_container=docker_grobid,
+                )
                 try:
                     self._step_grobid(state, paper.path)
                 finally:
+                    stop_resources()
                     stop()
 
                 # --- NLP ---
                 stop = self.metrics.time_stage(paper_metrics, "nlp_wall")
+                stop_resources = self.metrics.monitor_stage_resources(
+                    paper_metrics, "nlp_wall"
+                )
                 try:
                     doc_ir, result, nlp_time, from_cache = self._step_nlp(state)
                 finally:
+                    stop_resources()
                     stop()
 
                 # сохраняем "реальную" стоимость NLP
@@ -72,7 +94,7 @@ class Workflow:
 
                 paper_metrics.sentences = len({e.sentence_id for e in result.entities})
                 paper_metrics.relations = analysis["relations"]
-                paper_metrics.entities = analysis["entities"]
+                paper_metrics.entities = analysis["entity_mentions"]
 
                 # дополнительные метрики
                 paper_metrics.extra.update(analysis)
@@ -83,20 +105,24 @@ class Workflow:
 
                 # --- NEO4J ---
                 stop = self.metrics.time_stage(paper_metrics, "neo4j")
+                stop_resources = self.metrics.monitor_stage_resources(
+                    paper_metrics,
+                    "neo4j",
+                    docker_container=docker_neo4j,
+                )
                 try:
                     self._step_neo4j(paper, doc_ir, result)
                 finally:
+                    stop_resources()
                     stop()
 
-            except Exception as e:
-                lg.info(f"[skip paper {paper.id}] {e}")
+            except Exception:
+                lg.exception("Skipping paper %s due to error", paper.id)
                 continue
 
         self.metrics.save_raw()
         self.metrics.standard_analysis()
-        self.metrics.plot_stage_times()
-        self.metrics.plot_complexity()
-        self.metrics.plot_distributions()
+        self.metrics.plot_all_metric_figures()
 
     # --- steps
 

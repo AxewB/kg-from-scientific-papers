@@ -99,6 +99,7 @@ class ArxivDownloader(DownloaderBase):
                 )
 
                 papers.append(paper)
+                sleep(3)
 
             sleep(3)
 

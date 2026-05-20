@@ -17,6 +17,7 @@ dependencies = [
   "torch",
   "accelerate",
   "neo4j",
+  "psutil",
 ]
 
 [project.optional-dependencies]

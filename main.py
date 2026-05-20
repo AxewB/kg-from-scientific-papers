@@ -29,16 +29,16 @@ def main():
     lg.info("Initializing downloader...")
     downloader = ArxivDownloader(
         categories=[
-            "cs.AI",
+            # "cs.AI",
             # "cs.AR",
             # "cs.CC",
-            # "math.SG",
-            # "math.SP",
+            "math.SG",
+            "math.SP",
             # "q-fin.CP",
             # "q-fin.EC",
             # "q-fin.GN",
         ],
-        num_each=6,
+        num_each=20,
     )
 
     lg.info("Initializing SciBERT NER and RE extractors...")

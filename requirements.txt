@@ -6,3 +6,4 @@ transformers
 torch
 accelerate
 neo4j
+psutil
