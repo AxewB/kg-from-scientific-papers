@@ -1,6 +1,8 @@
 # my ignore list
 .cache*
+cache*
 .log
+log
 temp.md
 artifacts
 
