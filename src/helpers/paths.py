@@ -6,8 +6,11 @@ class Paths:
     def __init__(self) -> None:
         self.root: Path = self._find_project_root()
 
-        self.log: Path = self.root / ".log"
-        self.cache: Path = self.root / ".cache"
+        self.output: Path = self.root / "output"
+
+        self.log: Path = self.root / self.output / "log"
+        self.cache: Path = self.root / self.output /  "cache"
+
         self.papers: Path = self.cache / "papers"
         self.metrics_root: Path = self.cache / "metrics"
 

@@ -53,14 +53,14 @@ docker compose up -d
    python main.py ner_re_learn
    ```
 
-1. Положить PDF в `.cache/papers/<arxiv_id>/<arxiv_id>.pdf` **или** скачать с
+2. Положить PDF в `cache/papers/<arxiv_id>/<arxiv_id>.pdf` **или** скачать с
    arXiv:
 
    ```sh
    python main.py run --download --categories math.SG math.SP --num-each 5
    ```
 
-1. Запустить пайплайн по локальным статьям (режим по умолчанию):
+3. Запустить пайплайн по локальным статьям (режим по умолчанию):
 
    ```sh
    python main.py
@@ -68,7 +68,7 @@ docker compose up -d
    python main.py run
    ```
 
-Результаты метрик: `.cache/metrics/<дата-время>/` (`metrics.jsonl`,
+Результаты метрик: `cache/metrics/<дата-время>/` (`metrics.jsonl`,
 `summary.csv`, `figures/`).\
 Логи: `.log/`.\
 Чекпоинты моделей: `artifacts/ner`, `artifacts/re`.
@@ -106,7 +106,7 @@ python main.py --download --categories cs.AI --num-each 10   # run по умол
 | `--categories CAT …` | `math.SG` `math.SP` | Категории arXiv | 
 | `--num-each N` | `20` | Статей на категорию при `--download` | 
 | `--download` | — | Скачать PDF с arXiv перед обработкой | 
-| `--papers-dir PATH` | `.cache/papers` | Каталог с локальными PDF | 
+| `--papers-dir PATH` | `cache/papers` | Каталог с локальными PDF | 
 | `--grobid-url URL` | `http://localhost:8070` | Адрес GROBID |
 | `--neo4j-uri URI` | `neo4j://localhost:7687` | Bolt URI | 
 | `--neo4j-user` | `neo4j` | Пользователь | 
@@ -117,7 +117,7 @@ python main.py --download --categories cs.AI --num-each 10   # run по умол
 Примеры:
 
 ```sh
-# Только локальные PDF из .cache/papers
+# Только локальные PDF из cache/papers
 python main.py run
 
 # Скачать и обработать
@@ -164,13 +164,13 @@ python main.py train-re --output-dir artifacts/re
 `summary.csv` и графики без повторной обработки статей:
 
 ```sh
-python main.py rebuild-metrics .cache/metrics/2026-05-09_14-30-00
+python main.py rebuild-metrics cache/metrics/2026-05-09_14-30-00
 ```
 
 ## Структура каталогов
 
 ```
-.cache/
+cache/
   papers/          # PDF по arXiv ID
   metrics/         # прогоны метрик (timestamp)
 .log/              # логи приложения
