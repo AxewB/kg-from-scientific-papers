@@ -4,11 +4,11 @@ import os
 from pathlib import Path
 import time
 
-from data_extraction.grobid import GrobidClient
+from ingestion.grobid import GrobidClient
 from domain.ir import DocumentIR
 from domain.nlp_result import NLPResult
 from domain.paper import Paper
-from downloader.downloader_base import DownloaderBase
+from ingestion.downloader.downloader_base import DownloaderBase
 from helpers.paper_state import PaperState
 from pipeline.graph_sink import Neo4jSink
 from pipeline.kg_analyzer import KGAnalyzer

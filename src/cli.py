@@ -80,9 +80,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    from data_extraction.grobid import GrobidClient
+    from ingestion.grobid import GrobidClient
     from db.neo4j_writer import Neo4jGraphWriter
-    from downloader.arxiv_downloader import ArxivDownloader
+    from ingestion.downloader.arxiv_downloader import ArxivDownloader
     from helpers import logger
     from helpers.paths import paths
     from nlp.ner.predictor import SciBERTNER

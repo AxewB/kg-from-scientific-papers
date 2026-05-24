@@ -13,7 +13,7 @@ from arxiv import Client, Result, Search, SortCriterion
 from domain import category
 from domain.category import Category
 from domain.paper import Paper
-from downloader.downloader_base import DownloaderBase
+from ingestion.downloader.downloader_base import DownloaderBase
 from helpers.paths import paths
 
 lg = logging.getLogger(__name__)
