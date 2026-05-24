@@ -4,6 +4,7 @@ cache*
 .log
 log
 temp.md
+output
 artifacts
 
 ###
