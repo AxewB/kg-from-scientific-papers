@@ -7,5 +7,3 @@ torch
 accelerate
 neo4j
 psutil
-# optional: faster GPU metrics polling (NVML); falls back to nvidia-smi
-# nvidia-ml-py

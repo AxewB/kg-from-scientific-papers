@@ -20,6 +20,9 @@ dependencies = [
   "psutil",
 ]
 
+[project.scripts]
+masters-diploma = "cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest",

@@ -27,7 +27,7 @@ exclude = [
   "venv",
 ]
 
-line-length = 88
+line-length = 120
 indent-width = 4
 
 [format]
@@ -35,3 +35,4 @@ indent-style = "space"
 quote-style = "double"
 docstring-code-format = true
 docstring-code-line-length = 20
+skip-magic-trailing-comma = true
