@@ -6,8 +6,8 @@ from domain.ir import DocumentIR
 from domain.entity import Entity
 from domain.nlp_result import NLPResult
 from domain.relation import Relation
-from pipeline.ner.predictor import SciBERTNER
-from pipeline.relation_extraction.predictor import SciBERTRE
+from nlp.ner.predictor import SciBERTNER
+from nlp.re.predictor import SciBERTRE
 
 lg = logging.getLogger(__name__)
 

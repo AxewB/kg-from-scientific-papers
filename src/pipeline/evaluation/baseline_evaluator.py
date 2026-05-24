@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 from domain.entity import scierc_ner_label_to_bio_suffix
 from datasets.scierc_loader import load_scierc_split, ner_global_to_local
-from pipeline.ner.predictor import SciBERTNER
-from pipeline.relation_extraction.predictor import SciBERTRE
+from nlp.ner.predictor import SciBERTNER
+from nlp.re.predictor import SciBERTRE
 
 lg = logging.getLogger(__name__)
 

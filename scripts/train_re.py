@@ -6,7 +6,7 @@ from pathlib import Path
 # Allow running as `python train_re.py` without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from pipeline.relation_extraction.trainer import RETrainingConfig, SciBERTRETrainer
+from nlp.re.trainer import RETrainingConfig, SciBERTRETrainer
 
 
 def parse_args() -> argparse.Namespace:

@@ -85,10 +85,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     from downloader.arxiv_downloader import ArxivDownloader
     from helpers import logger
     from helpers.paths import paths
+    from nlp.ner.predictor import SciBERTNER
+    from nlp.pipeline import NLPPipeline
+    from nlp.re.predictor import SciBERTRE
     from pipeline.graph_sink import Neo4jSink
-    from pipeline.ner.predictor import SciBERTNER
-    from pipeline.nlp_pipeline import NLPPipeline
-    from pipeline.relation_extraction.predictor import SciBERTRE
     from pipeline.workflow import Workflow
 
     logger.init_logger(paths.log_file())
@@ -125,7 +125,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_train_ner(args: argparse.Namespace) -> None:
-    from pipeline.ner.trainer import NERTrainingConfig, SciBERTNERTrainer
+    from nlp.ner.trainer import NERTrainingConfig, SciBERTNERTrainer
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     lg = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ def cmd_train_ner(args: argparse.Namespace) -> None:
 
 
 def cmd_train_re(args: argparse.Namespace) -> None:
-    from pipeline.relation_extraction.trainer import RETrainingConfig, SciBERTRETrainer
+    from nlp.re.trainer import RETrainingConfig, SciBERTRETrainer
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     lg = logging.getLogger(__name__)

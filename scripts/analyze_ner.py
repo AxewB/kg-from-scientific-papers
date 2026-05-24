@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from domain.entity import scierc_ner_label_to_bio_suffix
 from pipeline.evaluation.baseline_evaluator import BaselineEvaluator
-from pipeline.ner.predictor import SciBERTNER
+from nlp.ner.predictor import SciBERTNER
 
 
 def corpus_stats(path: Path) -> None:

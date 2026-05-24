@@ -13,8 +13,8 @@ from helpers.paper_state import PaperState
 from pipeline.graph_sink import Neo4jSink
 from pipeline.kg_analyzer import KGAnalyzer
 from pipeline.metrics_collector import MetricsCollector, PaperMetrics
-from pipeline.nlp_pipeline import NLPPipeline
-from text_processing.tei_parser import TEIParser
+from nlp.pipeline import NLPPipeline
+from text.tei_parser import TEIParser
 
 lg = logging.getLogger(__name__)
 
@@ -63,15 +63,9 @@ class Workflow:
 
                 # --- GROBID ---
                 stop = self.metrics.time_stage(paper_metrics, "grobid")
-                stop_resources = self.metrics.monitor_stage_resources(
-                    paper_metrics,
-                    "grobid",
-                    docker_container=docker_grobid,
-                )
                 try:
                     self._step_grobid(state, paper.path)
                 finally:
-                    stop_resources()
                     stop()
 
                 # --- NLP ---
@@ -106,15 +100,9 @@ class Workflow:
 
                 # --- NEO4J ---
                 stop = self.metrics.time_stage(paper_metrics, "neo4j")
-                stop_resources = self.metrics.monitor_stage_resources(
-                    paper_metrics,
-                    "neo4j",
-                    docker_container=docker_neo4j,
-                )
                 try:
                     self._step_neo4j(paper, doc_ir, result)
                 finally:
-                    stop_resources()
                     stop()
 
             except Exception:

@@ -6,7 +6,7 @@ from pathlib import Path
 # Allow running as `python train_ner.py` without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from pipeline.ner.trainer import NERTrainingConfig, SciBERTNERTrainer
+from nlp.ner.trainer import NERTrainingConfig, SciBERTNERTrainer
 
 
 def parse_args() -> argparse.Namespace:

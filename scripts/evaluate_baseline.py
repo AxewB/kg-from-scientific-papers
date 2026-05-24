@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from pipeline.evaluation.baseline_evaluator import BaselineEvaluator
-from pipeline.ner.predictor import SciBERTNER
-from pipeline.relation_extraction.predictor import SciBERTRE
+from nlp.ner.predictor import SciBERTNER
+from nlp.re.predictor import SciBERTRE
 
 
 def parse_args() -> argparse.Namespace:
